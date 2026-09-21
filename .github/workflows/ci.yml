@@ -27,8 +27,10 @@ jobs:
           bazelisk-cache: true
           disk-cache: ${{ github.workflow }}
           repository-cache: true
-          # don't let PR runs pollute the caches main benefits from
-          cache-save: ${{ github.event_name != 'pull_request' }}
+      # vila's tvm_ffi_extension discovers the pip package through the system
+      # python3; without it //src/ffi:rcllite_ffi cannot be fetched/built.
+      - name: Install apache-tvm-ffi (needed to build //src/ffi)
+        run: sudo pip3 install --break-system-packages apache-tvm-ffi==0.1.12
       - name: Build
         run: bazelisk build //...
       - name: Unit tests (mock ddsc, no network)
@@ -51,6 +53,5 @@ jobs:
           bazelisk-cache: true
           disk-cache: ${{ github.workflow }}
           repository-cache: true
-          cache-save: ${{ github.event_name != 'pull_request' }}
       - name: Interop tests (rcllite <-> ros2 CLI / rclpy)
         run: bash scripts/ci/ros2_interop.sh "$GITHUB_WORKSPACE"
