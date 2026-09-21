@@ -85,11 +85,16 @@ BIN=bazel-bin/examples
 #    /chatter at 1 Hz; echo with type autodetection must receive one.
 say "1/6 rcllite talker -> ros2 topic echo"
 start_node talker "$BIN/rcllite_talker" >/dev/null
-if timeout 90 ros2 topic echo --once /chatter 2>/dev/null | grep -q "Hello, world!"; then
+# Capture first, assert second: `echo | grep -q` under pipefail can exit
+# nonzero via SIGPIPE even when the message arrived, and capturing keeps the
+# payload visible in the failure message.
+echoed=$(timeout 90 ros2 topic echo --once /chatter 2>/dev/null || true)
+if printf '%s\n' "$echoed" | grep -q "Hello, world!"; then
   PASS=$((PASS + 1))
 else
   FAIL=$((FAIL + 1))
-  echo "FAIL: nothing received on /chatter via ros2 topic echo"
+  echo "FAIL: nothing received on /chatter via ros2 topic echo; got:"
+  printf '%s\n' "$echoed"
 fi
 
 # 2. topic sub (ros2 -> rcllite): publish from the CLI, the listener callback
@@ -107,20 +112,28 @@ else
 fi
 
 # 3. service server (ros2 -> rcllite): the server hashes each requested name
-#    into an integer (type=2); assert the shape and range of the response.
-#    Humble's CLI prints responses as Python repr, not YAML.
+#    into an integer (type=2); ask for two names and require two distinct
+#    in-range hashes, so a constant/garbage response of the right shape cannot
+#    pass.  Humble's CLI prints responses as Python repr, not YAML.
 say "3/6 ros2 service call -> rcllite service server"
 SRV_PID=$(start_node srv "$BIN/rcllite_service_server")
-wait_log /tmp/srv.log "ready:" 30
-out=$(timeout 90 ros2 service call /get_parameters rcl_interfaces/srv/GetParameters \
-  "{names: [ci_probe]}" 2>/dev/null)
-if echo "$out" | grep -q "type=2" &&
-  v=$(echo "$out" | grep -oP 'integer_value=\K[0-9]+' | head -n1) &&
-  [ -n "$v" ] && [ "$v" -le 65535 ]; then
-  PASS=$((PASS + 1))
-else
+if ! wait_log /tmp/srv.log "ready:" 30; then
   FAIL=$((FAIL + 1))
-  echo "FAIL: unexpected GetParameters response: $out"
+  echo "FAIL: rcllite service server did not become ready"
+else
+  out=$(timeout 90 ros2 service call /get_parameters rcl_interfaces/srv/GetParameters \
+    "{names: [ci_probe, ci_other]}" 2>/dev/null || true)
+  vals=$(printf '%s\n' "$out" | grep -oP 'integer_value=\K[0-9]+' || true)
+  v1=$(printf '%s\n' "$vals" | sed -n 1p)
+  v2=$(printf '%s\n' "$vals" | sed -n 2p)
+  if printf '%s\n' "$out" | grep -q "type=2" &&
+    [ -n "$v2" ] && [ "$v1" != "$v2" ] &&
+    [ "$v1" -le 65535 ] && [ "$v2" -le 65535 ]; then
+    PASS=$((PASS + 1))
+  else
+    FAIL=$((FAIL + 1))
+    echo "FAIL: unexpected GetParameters response: $out"
+  fi
 fi
 kill "$SRV_PID" 2>/dev/null || true
 sleep 2
@@ -161,15 +174,23 @@ else
 fi
 
 # 5. graph discovery: ros_discovery_info published by rcllite nodes must make
-#    them visible to `ros2 node list` (endpoint truth comes from DDS itself).
+#    them visible to `ros2 node list`.  Both checked nodes are rcllite and
+#    still alive here (the rcllite service server was killed after test 3);
+#    match lines exactly — an unanchored grep for '/get_parameters_server'
+#    would silently match the rclpy '/ros_get_parameters_server' from test 4.
 say "5/6 ros2 node list sees rcllite nodes"
 ok=1
+nodes=
 for _ in $(seq 1 30); do
-  if ros2 node list 2>/dev/null | grep -q '/talker'; then ok=0; break; fi
+  nodes=$(ros2 node list 2>/dev/null || true)
+  if printf '%s\n' "$nodes" | grep -qx '/talker' &&
+    printf '%s\n' "$nodes" | grep -qx '/listener'; then
+    ok=0
+    break
+  fi
   sleep 2
 done
-nodes=$(ros2 node list 2>/dev/null || true)
-if [ "$ok" -eq 0 ] && echo "$nodes" | grep -q '/get_parameters_server'; then
+if [ "$ok" -eq 0 ]; then
   PASS=$((PASS + 1))
 else
   FAIL=$((FAIL + 1))
@@ -177,9 +198,11 @@ else
 fi
 
 # 6. parameters: ros2 param set/get against the rcllite parameter services;
-#    the demo mirrors every change in its 1 Hz status line.
+#    the demo mirrors every change in its 1 Hz status line.  Its lifetime is
+#    the budget for the whole set -> observe -> get sequence, so keep it well
+#    above the worst-case CLI/discovery latency on a loaded CI machine.
 say "6/6 ros2 param get/set on rcllite node"
-start_node demo "$BIN/rcllite_parameters_demo" 25 >/dev/null
+start_node demo "$BIN/rcllite_parameters_demo" 90 >/dev/null
 sleep 3
 if timeout 60 ros2 param set /parameters_demo my_string world >/dev/null 2>&1 &&
   wait_log /tmp/demo.log "my_string='world'" 20 &&
