@@ -14,6 +14,7 @@
 #include "mock/mock_ddsc.h"
 
 #include <atomic>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <mutex>
@@ -155,20 +156,26 @@ extern "C" {
 // ddsc API
 // ---------------------------------------------------------------------------
 
+// The CycloneDDS prototypes qualify qos parameters __restrict, and gcc keeps
+// that in the pointer's type — such a value cannot bind to std::map's
+// reference parameters.  Passing it by value through a plain-pointer
+// parameter strips the qualifier (MSVC ignores it either way).
+inline const dds_qos_t* qos_key(const dds_qos_t* qos) { return qos; }
+
 dds_qos_t* dds_create_qos(void) {
   return new dds_qos_t{};  // opaque handle; state lives in the map below
 }
 
 void dds_delete_qos(dds_qos_t* __restrict qos) {
   std::lock_guard<std::mutex> lock(mock_dds::internal::mtx);
-  mock_dds::internal::qos_state.erase(qos);
+  mock_dds::internal::qos_state.erase(qos_key(qos));
   delete qos;
 }
 
 void dds_qset_history(dds_qos_t* __restrict qos, dds_history_kind_t kind,
                       int32_t depth) {
   std::lock_guard<std::mutex> lock(mock_dds::internal::mtx);
-  auto& s = mock_dds::internal::qos_state[qos];
+  auto& s = mock_dds::internal::qos_state[qos_key(qos)];
   s.history = kind;
   s.depth = depth;
 }
@@ -177,12 +184,12 @@ void dds_qset_reliability(dds_qos_t* __restrict qos, dds_reliability_kind_t kind
                           dds_duration_t max_blocking_time) {
   (void)max_blocking_time;
   std::lock_guard<std::mutex> lock(mock_dds::internal::mtx);
-  mock_dds::internal::qos_state[qos].reliability = kind;
+  mock_dds::internal::qos_state[qos_key(qos)].reliability = kind;
 }
 
 void dds_qset_durability(dds_qos_t* __restrict qos, dds_durability_kind_t kind) {
   std::lock_guard<std::mutex> lock(mock_dds::internal::mtx);
-  mock_dds::internal::qos_state[qos].durability = kind;
+  mock_dds::internal::qos_state[qos_key(qos)].durability = kind;
 }
 
 void dds_qset_deadline(dds_qos_t* __restrict qos, dds_duration_t period) {
@@ -195,6 +202,15 @@ void dds_qset_userdata(dds_qos_t* __restrict qos, const void* __restrict value,
   (void)qos;
   (void)value;
   (void)size;
+}
+
+void dds_free(void* ptr) { std::free(ptr); }
+
+bool dds_qget_userdata(const dds_qos_t* __restrict qos, void** value, size_t* sz) {
+  (void)qos;
+  (void)value;
+  (void)sz;
+  return false;  // userdata is never set on mock qos objects
 }
 
 dds_entity_t dds_create_domain(dds_domainid_t domain, const char* config) {
@@ -384,6 +400,28 @@ dds_return_t dds_takecdr(dds_entity_t reader, struct ddsi_serdata** buf, uint32_
     si[i].valid_data = true;
   }
   return static_cast<dds_return_t>(drained.size());
+}
+
+// Typed-sample API used by GraphMonitor's builtin-topic readers (rt/rosout,
+// ros_discovery_info).  The mock simulates no builtin traffic, so take
+// always reports an empty batch; rcllite's data path goes through
+// dds_takecdr above and is covered by the tests.
+dds_return_t dds_take(dds_entity_t reader_or_condition, void** buf,
+                      dds_sample_info_t* si, size_t bufsz, uint32_t maxs) {
+  (void)reader_or_condition;
+  (void)buf;
+  (void)si;
+  (void)bufsz;
+  (void)maxs;
+  return 0;
+}
+
+dds_return_t dds_return_loan(dds_entity_t entity, void** buf, int32_t bufsz) {
+  (void)entity;
+  if (buf != nullptr && bufsz > 0) {
+    std::memset(buf, 0, static_cast<size_t>(bufsz) * sizeof(*buf));
+  }
+  return DDS_RETCODE_OK;
 }
 
 dds_entity_t dds_create_waitset(dds_entity_t parent) {
