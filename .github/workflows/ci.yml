@@ -1,0 +1,56 @@
+# CI for rcllite: hermetic unit tests on both supported platforms, plus a
+# ROS 2 Humble interop job that builds the examples inside a stock ros:humble
+# container and cross-checks them against the ros2 CLI (AGENTS.md interop
+# matrix).  The interop logic lives in scripts/ci/ros2_interop.sh so it can
+# also be run locally in any ros:humble container.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux · build & tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          bazelisk-version: 1.x
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}
+          repository-cache: true
+          # don't let PR runs pollute the caches main benefits from
+          cache-save: ${{ github.event_name != 'pull_request' }}
+      - name: Build
+        run: bazelisk build //...
+      - name: Unit tests (mock ddsc, no network)
+        run: bazelisk test //tests/... --test_output=errors
+      - name: E2E tests (manual-tagged, real loopback sockets)
+        run: bazelisk test //tests:comms_test //tests:qos_e2e_test --test_output=errors
+
+  ros2-humble-interop:
+    name: ROS 2 Humble · interop
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    container:
+      image: ros:humble
+    steps:
+      - uses: actions/checkout@v5
+      - uses: bazel-contrib/setup-bazel@0.15.0
+        with:
+          # the ros:humble container ships no preinstalled bazelisk
+          bazelisk-version: 1.x
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}
+          repository-cache: true
+          cache-save: ${{ github.event_name != 'pull_request' }}
+      - name: Interop tests (rcllite <-> ros2 CLI / rclpy)
+        run: bash scripts/ci/ros2_interop.sh "$GITHUB_WORKSPACE"
