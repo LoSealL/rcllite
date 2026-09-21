@@ -1,0 +1,7 @@
+# Build files injected into the upstream interface repositories fetched by
+# new_git_repository (see MODULE.bazel): plain exports of the .msg/.srv
+# definition files consumed by //msg:* targets.
+exports_files([
+    "rcl_interfaces.BUILD",
+    "rmw_dds_common.BUILD",
+])

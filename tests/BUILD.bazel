@@ -1,0 +1,107 @@
+load("//:build_defs.bzl", "rcllite_cc_test")
+
+package(default_visibility = ["//visibility:private"])
+
+# --- unit tests (mock ddsc, no network) ---------------------------------------
+
+rcllite_cc_test(
+    name = "client_test",
+    srcs = ["client_test.cpp"],
+    deps = [
+        "//src/rcllite:rcllite_under_test",
+        "//tests/mock:mock_ddsc",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+rcllite_cc_test(
+    name = "executor_test",
+    srcs = ["executor_test.cpp"],
+    deps = [
+        "//src/rcllite:rcllite_under_test",
+        "//tests/mock:mock_ddsc",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+rcllite_cc_test(
+    name = "graph_executor_test",
+    srcs = ["graph_executor_test.cpp"],
+    deps = [
+        "//src/rcllite:rcllite_under_test",
+        "//tests/mock:mock_ddsc",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+rcllite_cc_test(
+    name = "service_test",
+    srcs = ["service_test.cpp"],
+    deps = [
+        "//src/rcllite:rcllite_under_test",
+        "//tests/mock:mock_ddsc",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+rcllite_cc_test(
+    name = "qos_test",
+    srcs = ["qos_test.cpp"],
+    deps = [
+        "//src/rcllite:rcllite_under_test",
+        "//tests/mock:mock_ddsc",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+# names/cdr tests never touch DDS at runtime; they link the real library.
+rcllite_cc_test(
+    name = "names_test",
+    srcs = ["names_test.cpp"],
+    deps = [
+        "//src/rcllite",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+rcllite_cc_test(
+    name = "cdr_test",
+    srcs = ["cdr_test.cpp"],
+    deps = [
+        "//msg:builtin_interfaces",
+        "//msg:rcl_interfaces",
+        "//msg:rosgraph_msgs",
+        "//src/rcllite",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+# --- end-to-end tests (real CycloneDDS, bind real sockets) --------------------
+# Tagged "manual": excluded from `bazel test //...`; run explicitly when the
+# environment allows real network traffic.
+
+rcllite_cc_test(
+    name = "comms_test",
+    # Discovery + service roundtrips need room on loaded machines.
+    size = "large",
+    srcs = ["comms_test.cpp"],
+    tags = ["manual"],
+    deps = [
+        "//msg:rcl_interfaces",
+        "//msg:rosgraph_msgs",
+        "//src/rcllite",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+rcllite_cc_test(
+    name = "qos_e2e_test",
+    size = "large",
+    srcs = ["qos_e2e_test.cpp"],
+    tags = ["manual"],
+    deps = [
+        "//msg:rcl_interfaces",
+        "//src/rcllite",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

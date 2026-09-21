@@ -1,0 +1,70 @@
+module(
+    name = "rcllite",
+    version = "0.1.0",
+)
+
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "rules_cc", version = "0.2.22")
+bazel_dep(name = "rules_python", version = "1.9.0")
+
+# Hermetic Python for the message code generator (shares vila's toolchain).
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(python_version = "3.12")
+use_repo(python, "python_3_12")
+
+# GoogleTest (unit tests); version unified with vila's dependency.
+bazel_dep(name = "googletest", version = "1.18.0", repo_name = "com_google_googletest")
+
+# VILA: logging (vila::Logger) and error handling (vila::Status).
+# vila is not registered in the BCR; pin the exact upstream commit.
+bazel_dep(name = "vila", version = "1.0.6")
+git_override(
+    module_name = "vila",
+    commit = "3502768d5ec0aeab6140a2f418e0cddfc9e8e8d6",
+    remote = "https://github.com/llteco/vila",
+)
+
+# TVM FFI (optional, for //src/ffi:rcllite_ffi): headers + prebuilt runtime
+# discovered from the pip package apache-tvm-ffi, reusing vila's configure
+# rule.  Requires `pip install apache-tvm-ffi` before building.
+tvm_ffi_ext = use_extension("@vila//bazel/bzlmod:extensions.bzl", "tvm_ffi_extension")
+use_repo(tvm_ffi_ext, "tvm_ffi")
+
+# CycloneDDS: the DDS middleware rcllite speaks ROS 2 wire-compatible.
+# Upstream has no Bazel support; fetch the sources with new_git_repository
+# (via use_repo_rule) and compile them from //bazel/cyclonedds:ddsc.
+# The build_file only exports filegroups of the upstream tree.
+new_git_repository = use_repo_rule(
+    "@bazel_tools//tools/build_defs/repo:git.bzl",
+    "new_git_repository",
+)
+
+new_git_repository(
+    name = "cyclonedds",
+    build_file = "//bazel/cyclonedds:cyclonedds.BUILD",
+    commit = "1be07de395e4ddf969db2b90328cdf4fb73e9a64",  # tag 0.10.4
+    remote = "https://github.com/eclipse-cyclonedds/cyclonedds.git",
+)
+
+# Official ROS 2 interface definitions, generated into C++ headers at build
+# time by //bazel/rules/msg.bzl (no .msg copies or generated headers are
+# committed to this repository).  Pinned to the humble branches the wire
+# compatibility matrix was validated against.
+iface_git = use_repo_rule(
+    "@bazel_tools//tools/build_defs/repo:git.bzl",
+    "new_git_repository",
+)
+
+iface_git(
+    name = "rcl_interfaces",
+    build_file = "//bazel:rcl_interfaces.BUILD",
+    commit = "82776fc9068d1e0cd4af11c2e2700195994b2eb1",  # humble
+    remote = "https://github.com/ros2/rcl_interfaces.git",
+)
+
+iface_git(
+    name = "rmw_dds_common",
+    build_file = "//bazel:rmw_dds_common.BUILD",
+    commit = "e26ba1079886c5598614172db0b27526aa6af07d",  # humble
+    remote = "https://github.com/ros2/rmw_dds_common.git",
+)

@@ -1,0 +1,10 @@
+load("@rules_python//python:defs.bzl", "py_binary")
+
+# The .msg/.srv -> C++ generator, run by //bazel/rules:msg.bzl at build time
+# on the hermetic Python toolchain (no host python required).
+py_binary(
+    name = "msg_codegen",
+    srcs = ["msg_codegen.py"],
+    main = "msg_codegen.py",
+    visibility = ["//visibility:public"],
+)

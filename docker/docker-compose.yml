@@ -1,0 +1,84 @@
+# ROS 2 Humble interop environment for rcllite (see README.md).
+#
+# Services are grouped with compose profiles, so a plain `docker compose
+# up` starts nothing -- pick what you need:
+#   --profile demo    standard ROS 2 talker + listener (smoke test)
+#   --profile record  `ros2 bag record` of everything on the DDS domain
+#   --profile play    `ros2 bag play` of a recorded bag
+#
+# Host interop (Linux only): uncomment `network_mode: host` in the
+# `x-ros2` anchor below to share the host network with rcllite nodes.
+
+name: rcllite-interop
+
+# Persistent host <-> container exchange space, mounted into every service
+# at /works_dir (gitignored; see README.md). Anchored as a single list item
+# because YAML merge keys replace whole lists -- services that add their
+# own mounts (record/play append ./bags) reference it instead.
+x-works-dir: &works_dir ./works_dir:/works_dir
+
+x-ros2: &ros2
+  build: .
+  image: rcllite/ros2-interop:humble
+  environment:
+    RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+    ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+  # Uncomment on Linux so these containers see rcllite nodes running on
+  # the host (native Docker host networking; not available with Docker
+  # Desktop on Windows/macOS, whose VM cannot exchange DDS traffic with
+  # the host):
+  #network_mode: host
+
+services:
+  # ---- demo traffic (profile: demo) -----------------------------------
+  # Standard ROS 2 talker publishing /chatter at ~1 Hz, to record against.
+  talker:
+    <<: *ros2
+    command: ros2 run demo_nodes_cpp talker
+    volumes:
+      - *works_dir
+    profiles: ["demo"]
+
+  listener:
+    <<: *ros2
+    command: ros2 run demo_nodes_cpp listener
+    volumes:
+      - *works_dir
+    profiles: ["demo"]
+
+  # ---- rosbag recording (profile: record) -----------------------------
+  # Records every topic visible on the DDS domain -- including topics
+  # published by rcllite nodes -- into ./bags/<BAG_NAME> on the host.
+  # stop_signal SIGINT lets rosbag2 finalize metadata.yaml on Ctrl+C or
+  # `docker compose stop record`.
+  record:
+    <<: *ros2
+    command: >
+      ros2 bag record
+      --all
+      --storage sqlite3
+      --output /bags/${BAG_NAME:-demo}
+    volumes:
+      - *works_dir
+      - ./bags:/bags
+    stop_signal: SIGINT
+    profiles: ["record"]
+
+  # ---- rosbag replay (profile: play) ----------------------------------
+  # Publishes the bag's topics as an ordinary ROS 2 node that any
+  # subscriber receives -- rcllite ones included. Also the entry point
+  # for one-off CLI commands (its profile needs no activation for
+  # `docker compose run`):
+  #   docker compose run --rm play ros2 bag info /bags/demo
+  #   docker compose run --rm play ros2 topic list
+  play:
+    <<: *ros2
+    command: >
+      ros2 bag play
+      /bags/${BAG_PATH:-demo}
+      --loop
+    volumes:
+      - *works_dir
+      - ./bags:/bags
+    stop_signal: SIGINT
+    profiles: ["play"]

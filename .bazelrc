@@ -1,0 +1,22 @@
+# Bazel configuration for rcllite (bazelisk + Bazel 8.8.0).
+# no coverage support needed hence no jdk needed
+build --coverage_output_generator=//:null --coverage_report_generator=//:null --coverage_support=//:null
+
+# Per-platform configuration (activates build:windows / build:linux / build:macos).
+build -c opt
+build --enable_platform_specific_config
+
+# --- Windows (MSVC) ----------------------------------------------------------
+# fmt (a vila dependency) requires /utf-8 on MSVC.
+build:windows --copt=/utf-8 --host_copt=/utf-8
+build:windows --cxxopt=/std:c++17 --host_cxxopt=/std:c++17
+# Keep command lines short for cl.exe.
+build:windows --features=compiler_param_file --enable_runfiles
+
+
+# --- Linux / macOS (gcc, clang) ----------------------------------------------
+build:linux --cxxopt=-std=c++17 --host_cxxopt=-std=c++17
+build:macos --cxxopt=-std=c++17 --host_cxxopt=-std=c++17
+
+# Print failing test output.
+test --test_output=errors

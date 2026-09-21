@@ -1,0 +1,12 @@
+# Root package: exposes the shared build definitions and format config.
+exports_files([
+    ".clang-format",
+    "build_defs.bzl",
+])
+
+# Empty stand-in for the coverage flags in .bazelrc (no JDK needed): every
+# cc_test resolves these labels during analysis, so they must exist.
+filegroup(
+    name = "null",
+    srcs = [],
+)

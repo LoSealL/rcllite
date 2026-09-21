@@ -1,0 +1,42 @@
+# Copyright 2026 rcllite contributors
+# Licensed under the Apache License, Version 2.0
+#
+# A complete topology: every node with its concrete configuration — the
+# "node.yaml 大合集".  Run it in one process with run_topology.py; every
+# node, parameter and endpoint below comes up exactly as if each node ran
+# its own config separately.
+#
+# Types may be written ROS-style ("pkg/msg/Name") or as the full DDS name
+# ("pkg::msg::dds_::Name_").  payload_hex is raw CDR including the 4-byte
+# encapsulation header; without it a bare CDR-LE header is published.
+nodes:
+  - name: talker
+    namespace: /
+    parameters:
+      rate: 10
+      greeting: hello from graph
+    publishers:
+      - topic: /chatter
+        type: rcl_interfaces/msg/Parameter
+        # CDR-LE of Parameter{name: "hello from graph", value: <defaults>}:
+        # header + string + ParameterValue (type/bool/int64/double/string/5 seqs)
+        payload_hex: "000100001100000068656c6c6f2066726f6d206772617068000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000"
+        rate_hz: 2.0
+
+  - name: listener
+    namespace: /
+    subscriptions:
+      - topic: /chatter
+        type: rcl_interfaces/msg/Parameter
+
+  - name: relay
+    namespace: /demo
+    subscriptions:
+      - topic: /chatter
+        type: rcl_interfaces/msg/Parameter
+    publishers:
+      # relative topic: expands against the /demo namespace
+      - topic: echoed
+        type: rcl_interfaces/msg/Parameter
+        # CDR-LE of Parameter{name: "relayed", value: <defaults>}
+        payload_hex: "000100000800000072656c6179656400000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000"

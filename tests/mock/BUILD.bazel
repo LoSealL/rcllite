@@ -1,0 +1,18 @@
+# Link-level mock of the subset of the CycloneDDS C API that rcllite uses.
+# Unit tests link rcllite against this instead of the real ddsc, so they run
+# without any network activity (no sockets, no discovery, no firewall).
+
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "mock_ddsc",
+    srcs = ["mock_ddsc.cc"],
+    hdrs = ["mock_ddsc.h"],
+    strip_include_prefix = "/tests",
+    deps = [
+        "//bazel/cyclonedds:generated_headers",  # cmake-generated ddsc headers
+        "@cyclonedds//:headers",  # upstream headers only, no library
+    ],
+)

@@ -1,0 +1,50 @@
+fail_fast: false
+exclude: (^external/|^bazel-.*|compile_commands\.json)
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+    - id: trailing-whitespace
+      # trailing whitespace is semantic inside unified diffs — never touch
+      # patch files (bazel ctx.patch applies them to pristine upstream clones)
+      exclude: (\.(diff|patch)$|.*/cubin/.*)
+    - id: end-of-file-fixer
+      exclude: (\.(diff|patch)$|.*/cubin/.*)
+    - id: check-added-large-files
+      args: ["--maxkb=1024"]
+    - id: requirements-txt-fixer
+  - repo: https://github.com/cpplint/cpplint
+    rev: 2.0.2
+    hooks:
+    - id: cpplint
+      exclude: (bazel|tests)
+      # wholesale deferral (revisit per-category when the backends settle):
+      # line length is checked at the project's clang-format width (88) via
+      # --linelength below; whitespace/braces conflicts with the braced-init
+      # expressions Google-style clang-format itself emits (T{}()); the rest
+      # are legacy patterns in the vendored-style backends.
+      args:
+        - --linelength=88
+        - "--filter=-legal/copyright,-whitespace/indent_namespace,-whitespace/braces,-readability/casting,-readability/check,-readability/braces,-runtime/int,-runtime/explicit,-build/include_what_you_use,-build/include_order,-build/header_guard,-build/namespaces,-build/c++17"
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v23.1.1
+    hooks:
+    - id: clang-format
+      exclude: (rules|src/.*\.cu(h)?$)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Ruff version.
+    rev: v0.16.8
+    hooks:
+      # Run the linter.
+      - id: ruff-check
+        args: [--fix]
+      # Run the formatter.
+      - id: ruff-format
+        args: [--preview]
+        # preview mode also formats ```python fences inside markdown — keep
+        # prose docs (code examples with deliberate alignment) out of it
+        exclude: ^docs/
+  - repo: https://github.com/loseall/bazel-buildifier-pre-commit-hooks
+    rev: v8.2.1
+    hooks:
+      - id: bazel-buildifier

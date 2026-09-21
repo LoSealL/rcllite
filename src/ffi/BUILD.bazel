@@ -1,0 +1,17 @@
+# The rcllite Python FFI glue: a shared library (rcllite_ffi.dll / .so)
+# loaded from Python via tvm_ffi.load_module().  Wraps node initialization
+# and execution only — see src/ffi/rcllite_ffi.cpp.
+
+load("//:build_defs.bzl", "rcllite_cc_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+rcllite_cc_binary(
+    name = "rcllite_ffi",
+    srcs = ["rcllite_ffi.cpp"],
+    linkshared = True,
+    deps = [
+        "//src/rcllite",
+        "@tvm_ffi",
+    ],
+)

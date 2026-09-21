@@ -1,0 +1,16 @@
+# The A -> B -> C pipeline demo: three registered behavior-carrying node
+# classes (counter / running sum / printer) launched by one GraphExecutor
+# topology.  See abc_graph.cpp.
+
+load("//:build_defs.bzl", "rcllite_cc_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+rcllite_cc_binary(
+    name = "abc_graph",
+    srcs = ["abc_graph.cpp"],
+    deps = [
+        "//msg:rcl_interfaces",
+        "//src/rcllite",
+    ],
+)

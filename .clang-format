@@ -1,0 +1,5 @@
+# rcllite code style: Google C++ style with an 88-column limit.
+# (Inherits everything else from the predefined Google style.)
+---
+BasedOnStyle: Google
+ColumnLimit: 88

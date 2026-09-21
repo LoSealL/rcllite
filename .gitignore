@@ -1,0 +1,19 @@
+# Bazel
+/bazel-*
+.vscode/
+.idea/
+.vs/
+*.user
+
+# runtime artifacts
+*.log
+*.lock
+
+# docker interop scratch space (keep the mount point, ignore contents)
+/docker/works_dir/*
+!/docker/works_dir/.gitkeep
+
+# Python
+__pycache__/
+.pytest_cache/
+.ruff_cache/

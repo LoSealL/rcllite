@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  CycloneDDS configuration for containers (referenced by CYCLONEDDS_URI).
+
+  Inside a container CycloneDDS cannot resolve the container hostname to a
+  network interface; `autodetermine` picks a multicast-capable one (eth0 on
+  a Docker bridge network) so DDS discovery works between containers, and
+  with the host when network_mode: host is used.
+-->
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain>
+    <General>
+      <Interfaces>
+        <NetworkInterface autodetermine="true"/>
+      </Interfaces>
+    </General>
+  </Domain>
+</CycloneDDS>

@@ -1,0 +1,60 @@
+# Official ROS 2 interface packages, generated at build time from the
+# upstream repositories (see MODULE.bazel).  Headers are includable as
+# "rcllite_types/<package>/<snake_case_name>.hpp".
+
+load("//bazel/rules:msg.bzl", "rcllite_msg_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rcllite_msg_library(
+    name = "builtin_interfaces",
+    files = [
+        "@rcl_interfaces//:builtin_interfaces/msg/Duration.msg",
+        "@rcl_interfaces//:builtin_interfaces/msg/Time.msg",
+    ],
+    package = "builtin_interfaces",
+)
+
+rcllite_msg_library(
+    name = "rcl_interfaces",
+    files = [
+        "@rcl_interfaces//:rcl_interfaces/msg/FloatingPointRange.msg",
+        "@rcl_interfaces//:rcl_interfaces/msg/IntegerRange.msg",
+        "@rcl_interfaces//:rcl_interfaces/msg/ListParametersResult.msg",
+        "@rcl_interfaces//:rcl_interfaces/msg/Log.msg",
+        "@rcl_interfaces//:rcl_interfaces/msg/Parameter.msg",
+        "@rcl_interfaces//:rcl_interfaces/msg/ParameterDescriptor.msg",
+        "@rcl_interfaces//:rcl_interfaces/msg/ParameterEvent.msg",
+        "@rcl_interfaces//:rcl_interfaces/msg/ParameterEventDescriptors.msg",
+        "@rcl_interfaces//:rcl_interfaces/msg/ParameterType.msg",
+        "@rcl_interfaces//:rcl_interfaces/msg/ParameterValue.msg",
+        "@rcl_interfaces//:rcl_interfaces/msg/SetParametersResult.msg",
+        "@rcl_interfaces//:rcl_interfaces/srv/DescribeParameters.srv",
+        "@rcl_interfaces//:rcl_interfaces/srv/GetParameterTypes.srv",
+        "@rcl_interfaces//:rcl_interfaces/srv/GetParameters.srv",
+        "@rcl_interfaces//:rcl_interfaces/srv/ListParameters.srv",
+        "@rcl_interfaces//:rcl_interfaces/srv/SetParameters.srv",
+        "@rcl_interfaces//:rcl_interfaces/srv/SetParametersAtomically.srv",
+    ],
+    package = "rcl_interfaces",
+    deps = [":builtin_interfaces"],
+)
+
+rcllite_msg_library(
+    name = "rosgraph_msgs",
+    files = [
+        "@rcl_interfaces//:rosgraph_msgs/msg/Clock.msg",
+    ],
+    package = "rosgraph_msgs",
+    deps = [":builtin_interfaces"],
+)
+
+rcllite_msg_library(
+    name = "rmw_dds_common",
+    files = [
+        "@rmw_dds_common//:rmw_dds_common/msg/Gid.msg",
+        "@rmw_dds_common//:rmw_dds_common/msg/NodeEntitiesInfo.msg",
+        "@rmw_dds_common//:rmw_dds_common/msg/ParticipantEntitiesInfo.msg",
+    ],
+    package = "rmw_dds_common",
+)

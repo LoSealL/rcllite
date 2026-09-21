@@ -1,0 +1,73 @@
+# The CycloneDDS 0.10.4 "ddsc" library.
+#
+# Upstream only ships CMake; the sources are fetched with
+# new_git_repository (MODULE.bazel) which uses cyclonedds.BUILD inside that
+# repository to export filegroups.  This package owns the actual compilation:
+# platform selects, the four cmake-generated public headers under
+# generated/dds/ (config/features/version/export) and the link options.
+
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["cyclonedds.BUILD"])
+
+# The four cmake-generated public headers (config/features/version/export),
+# addressable as "dds/xxx.h".
+cc_library(
+    name = "generated_headers",
+    hdrs = glob(["generated/dds/*.h"]),
+    includes = ["generated"],
+)
+
+cc_library(
+    name = "ddsc",
+    srcs = ["@cyclonedds//:ddsc_common_srcs"] + select({
+        "@platforms//os:windows": ["@cyclonedds//:ddsrt_windows_srcs"],
+        "@platforms//os:linux": [
+            "@cyclonedds//:ddsrt_linux_srcs",
+            "@cyclonedds//:ddsrt_posix_srcs",
+        ],
+        "@platforms//os:macos": [
+            "@cyclonedds//:ddsrt_macos_srcs",
+            "@cyclonedds//:ddsrt_posix_srcs",
+        ],
+        "//conditions:default": [
+            "@cyclonedds//:ddsrt_generic_srcs",
+            "@cyclonedds//:ddsrt_posix_srcs",
+        ],
+    }),
+    hdrs = [
+        "@cyclonedds//:public_headers",
+    ],
+    copts = select({
+        "@platforms//os:windows": [
+            "/wd4996",  # 'function': was declared deprecated
+        ],
+        "//conditions:default": [
+            "-Wno-unused-parameter",
+        ],
+    }),
+    defines = select({
+        "@platforms//os:windows": ["_CRT_SECURE_NO_WARNINGS"],
+        "//conditions:default": [],
+    }),
+    linkopts = select({
+        "@platforms//os:windows": [
+            "dbghelp.lib",
+            "ws2_32.lib",
+            "iphlpapi.lib",
+            "bcrypt.lib",
+        ],
+        "@platforms//os:macos": [],
+        "//conditions:default": [
+            "-lpthread",
+            "-ldl",
+        ],
+    }),
+    textual_hdrs = ["@cyclonedds//:ddsc_part_fragments"],
+    deps = [
+        ":generated_headers",
+        "@cyclonedds//:headers",  # -I paths into the fetched source tree
+    ],
+)

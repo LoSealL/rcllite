@@ -1,0 +1,73 @@
+# Copyright 2026 rcllite contributors
+# Licensed under the Apache License, Version 2.0
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyrcllite"
+description = "Python bindings for rcllite: node initialization and execution"
+readme = "python/README.md"
+requires-python = ">=3.12"
+authors = [{ name = "rcllite contributors" }]
+license = { text = "Apache-2.0" }
+classifiers = ["License :: OSI Approved :: Apache Software License"]
+dynamic = ["version"]
+dependencies = ["apache-tvm-ffi>=0.1.12"]
+
+[project.urls]
+Home = "https://github.com/llteco/rcl"
+
+[project.optional-dependencies]
+test = ["pytest"]
+graph = ["networkx"]
+launch = ["PyYAML"]
+
+[tool.setuptools.packages.find]
+where = ["python"]
+include = ["pyrcllite*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "pyrcllite.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["python/tests"]
+addopts = ["-q"]
+
+# --- Linters (ruff + pyright + pylint), config shared via pyproject ------
+
+[tool.ruff]
+line-length = 88
+preview = true
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "RUF"]
+ignore = [
+    "whitespace-before-punctuation",  # whitespace before ':' (slice style, conflicts with formatter)
+    "missing-whitespace",  # whitespace after ':' (formatter-managed)
+    "multiple-spaces-after-comma",  # multiple spaces after comma (formatter-managed)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pyrcllite"]
+
+[tool.pyright]
+include = ["python"]
+pythonVersion = "3.12"
+
+[tool.pylint.main]
+max-line-length = 88
+py-version = "3.12"
+ignore-paths = []
+
+[tool.pylint."messages control"]
+disable = [
+    "logging-fstring-interpolation",
+    "missing-module-docstring",
+    "no-member",
+    "no-name-in-module",
+    "fixme",
+    "R",
+    "I",
+]

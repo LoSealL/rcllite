@@ -1,0 +1,23 @@
+load("//:build_defs.bzl", "rcllite_cc_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+RCLLITE_EXAMPLES = [
+    "talker",
+    "listener",
+    "service_server",
+    "service_client",
+    "parameters_demo",
+]
+
+[
+    rcllite_cc_binary(
+        name = "rcllite_" + example,
+        srcs = [example + ".cpp"],
+        deps = [
+            "//msg:rcl_interfaces",
+            "//src/rcllite",
+        ],
+    )
+    for example in RCLLITE_EXAMPLES
+]

@@ -1,0 +1,83 @@
+# The rcllite library.  Headers and sources live side by side under
+# src/rcllite; the include root is the workspace "src" directory, so every
+# header is addressed as "rcllite/..." (strip_include_prefix below).
+
+load("//:build_defs.bzl", "rcllite_cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Sources shared by the real library and the mock-linked test library.
+RCLLITE_SRCS = [
+    "dds/entities.cpp",
+    "dds/raw_serdata.cpp",
+    "executor.cpp",
+    "graph.cpp",
+    "graph_executor.cpp",
+    "names.cpp",
+    "node.cpp",
+    "parameter.cpp",
+]
+
+RCLLITE_HDRS = glob(
+    ["**/*.hpp"],
+    exclude = [
+        "cdr.hpp",
+        "exception.hpp",
+        "msg_traits.hpp",
+    ],
+)
+
+# Header-only CDR serialization + message traits + the vila::Status based
+# error type.  Split out so the generated message types (//types) can depend
+# on serialization without depending on the DDS-linked library.
+rcllite_cc_library(
+    name = "cdr",
+    hdrs = [
+        "cdr.hpp",
+        "exception.hpp",
+        "msg_traits.hpp",
+    ],
+    strip_include_prefix = "/src",
+    deps = [
+        "@vila//vila/status",
+    ],
+)
+
+rcllite_cc_library(
+    name = "rcllite",
+    srcs = RCLLITE_SRCS,
+    hdrs = RCLLITE_HDRS,
+    strip_include_prefix = "/src",
+    deps = [
+        ":cdr",
+        "//bazel/cyclonedds:ddsc",
+        "//msg:builtin_interfaces",
+        "//msg:rcl_interfaces",
+        "//msg:rmw_dds_common",
+        "@vila//vila/config",
+        "@vila//vila/logging:logger",
+        "@vila//vila/status",
+        "@vila//vila/widget:registration",
+    ],
+)
+
+# Same library linked against the mock ddsc: lets unit tests drive rcllite
+# (executors, clients, services, QoS translation) without any network.
+rcllite_cc_library(
+    name = "rcllite_under_test",
+    testonly = True,
+    srcs = RCLLITE_SRCS,
+    hdrs = RCLLITE_HDRS,
+    strip_include_prefix = "/src",
+    deps = [
+        ":cdr",
+        "//msg:builtin_interfaces",
+        "//msg:rcl_interfaces",
+        "//msg:rmw_dds_common",
+        "//tests/mock:mock_ddsc",
+        "@vila//vila/config",
+        "@vila//vila/logging:logger",
+        "@vila//vila/status",
+        "@vila//vila/widget:registration",
+    ],
+)
