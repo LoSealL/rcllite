@@ -478,7 +478,19 @@ def main(argv=None) -> int:
         required=True,
         help=".msg/.srv files (classified by extension)",
     )
-    ap.add_argument("--output", required=True)
+    ap.add_argument(
+        "--output",
+        required=False,
+        help="output root; headers land in <output>/rcllite_types/<package>/",
+    )
+    ap.add_argument(
+        "--anchor",
+        help="execroot path of the FIRST declared output header; when set,"
+        " --output is derived by stripping its three path components and the"
+        " --output argument is ignored.  Use this from genrules:"
+        " $(location <first out>) -- accurate for root and external-repo"
+        " packages alike.",
+    )
     args = ap.parse_args(argv)
 
     msgs: list[MsgDef] = []
@@ -497,6 +509,14 @@ def main(argv=None) -> int:
             else:
                 print(f"warning: ignoring unknown file type: {fp}")
 
+    if not args.output and not args.anchor:
+        ap.error("one of --output/--anchor is required")
+    if args.anchor:
+        # a declared output is <pkg-bin-dir>/rcllite_types/<package>/<file>.hpp:
+        # strip the three tail components to recover the package bin dir
+        args.output = os.path.dirname(
+            os.path.dirname(os.path.dirname(args.anchor))
+        )
     out_dir = os.path.join(args.output, "rcllite_types", args.package)
     os.makedirs(out_dir, exist_ok=True)
 
