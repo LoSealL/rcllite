@@ -39,16 +39,20 @@ def rcllite_msg_library(name, package, files = [], deps = [], visibility = None)
         base = f[f.rfind("/") + 1:].rsplit(".", 1)[0]
         outs.append("rcllite_types/%s/%s.hpp" % (package, _camel_to_snake(base)))
 
-    # The generator writes <output>/rcllite_types/<package>/xxx.hpp; anchor
-    # the output at this package's bin dir so it matches the declared outs.
-    # (Must be invoked from a BUILD file in the top-level "msg" directory.)
+    # The generator writes <out-dir>/rcllite_types/<package>/xxx.hpp where
+    # <out-dir> must be THIS package's bin dir.  Pass the first declared
+    # output's execroot location via --anchor and let the tool derive the
+    # dir (dirname twice) -- always accurate.  Make-variable alternatives
+    # are wrong: $(BINDIR) drops the external/<module>+ prefix when this
+    # repository is consumed as a bzlmod dependency, and $(@D) expands to
+    # the first output's own directory (one level too deep).
     native.genrule(
         name = name + "_gen",
         srcs = files,
         outs = outs,
         tools = ["//tools:msg_codegen"],
         cmd = "$(location //tools:msg_codegen) --package " + package +
-              " --output \"$(BINDIR)/msg\" --files $(SRCS)",
+              " --anchor \"$(location :" + outs[0] + ")\" --files $(SRCS)",
     )
     cc_library(
         name = name,
