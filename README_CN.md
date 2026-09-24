@@ -129,6 +129,11 @@ int main()
   msg.name = "hello";
   pub->publish(msg);
 
+  // 订阅者可能尚未上线时（volatile QoS 下，无匹配 reader 时写出的样本
+  // 不会被后来加入的订阅者收到；transient-local 本就能收到）：
+  pub->wait_for_subscribers();                            // 阻塞直到首个订阅者匹配
+  bool sent = pub->publish(msg, std::chrono::seconds(1)); // 背压：超时返回 false，未写入
+
   node->create_subscription<rcl_interfaces::msg::Parameter>(
     "echo", [](const rcl_interfaces::msg::Parameter & m) { /* ... */ });
 
@@ -186,7 +191,8 @@ rcllite_msg_library(
 
 ## 线程模型
 
-- `Publisher::publish` / `Client::async_send_request` 可在任意线程调用。
+- `Publisher::publish` / `Client::async_send_request` 可在任意线程调用；
+  阻塞变体（`publish(msg, timeout)`、`wait_for_subscribers`）会停住调用线程。
 - 回调（订阅、服务、参数服务）统一在 `Executor::spin` 的线程内派发，
   单 executor 内回调天然串行，无需加锁。
 - 同步 `Client::call` 需要 executor 在另一线程 spin。

@@ -45,6 +45,10 @@ void set_write_result(dds_return_t rc);
 /// Number of matched writers a reader reports (drives wait_for_service).
 void set_matched_writers(dds_entity_t reader, int32_t count);
 
+/// Number of matched readers a writer reports (drives wait_for_subscribers
+/// and the backpressure publish overload).
+void set_matched_readers(dds_entity_t writer, int32_t count);
+
 /// QoS values captured when a reader/writer was created (as translated by
 /// rcl::dds::make_dds_qos).
 struct QosView {

@@ -148,6 +148,11 @@ int main()
   msg.name = "hello";
   pub->publish(msg);
 
+  // When subscribers may not exist yet (volatile QoS samples written while
+  // no reader is matched never reach late joiners — transient-local do):
+  pub->wait_for_subscribers();                           // block until the first subscriber matches
+  bool sent = pub->publish(msg, std::chrono::seconds(1)); // backpressure: false = timed out, nothing written
+
   node->create_subscription<rcl_interfaces::msg::Parameter>(
     "echo", [](const rcl_interfaces::msg::Parameter & m) { /* ... */ });
 
@@ -212,7 +217,8 @@ default values). `wstring` is not supported yet.
 ## Threading model
 
 - `Publisher::publish` / `Client::async_send_request` may be called from any
-  thread.
+  thread; the blocking variants (`publish(msg, timeout)`,
+  `wait_for_subscribers`) additionally stall the calling thread.
 - Callbacks (subscriptions, services, parameter services) are dispatched on
   the `Executor::spin` thread; within a single executor callbacks are
   naturally serialized — no locking needed.
