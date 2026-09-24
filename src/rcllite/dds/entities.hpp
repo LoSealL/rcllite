@@ -76,6 +76,9 @@ class Writer {
   /// Thread-safe: CycloneDDS writers may be written from any thread.
   bool write(const uint8_t* payload, size_t size);
 
+  /// Number of matched readers (publisher-side availability check).
+  size_t reader_count() const;
+
  private:
   dds_entity_t wr_ = DDS_RETCODE_ERROR;
   struct ddsi_sertype* sertype_ = nullptr;  // owned by the topic

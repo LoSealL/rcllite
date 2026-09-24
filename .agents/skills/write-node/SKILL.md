@@ -41,6 +41,12 @@ rcl_interfaces::msg::Parameter msg;
 msg.name = "hello";
 pub->publish(msg);                                    // 可在任意线程调用
 
+// 订阅者可能尚未上线时（volatile QoS 下，无匹配 reader 时写出的样本
+// 不会被后来的订阅者收到；transient-local 本就能收到，无需此 API）：
+pub->wait_for_subscribers();                          // 阻塞直到首个订阅者匹配（默认 10s 超时）
+bool ok = pub->publish(msg, std::chrono::seconds(1)); // 背压：无订阅者则等待；超时返回 false 且不写入，消息留在调用方
+pub->get_subscription_count();                        // 当前匹配的订阅者数
+
 node->create_subscription<rcl_interfaces::msg::Parameter>(
     "chatter", [](const rcl_interfaces::msg::Parameter& m) { /* ... */ });
 ```
@@ -135,6 +141,8 @@ std::thread spinner([&executor]() { executor.spin(); });
 ## 线程模型（写代码必须遵守）
 
 - `Publisher::publish`、`Client::async_send_request`：任意线程。
+- 阻塞变体 `publish(msg, timeout)`、`wait_for_subscribers` 会停住调用线程，
+  不要在 executor 回调里调用（除非有意卡住 spin 线程）。
 - 回调（订阅、服务、参数服务）：统一在 `Executor::spin` 线程内派发；
   **单 executor 内回调串行，无需加锁**。
 - 同步 `Client::call` 需要 executor 在另一线程 spin，否则死等。

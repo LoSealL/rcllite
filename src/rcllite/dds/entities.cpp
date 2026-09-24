@@ -178,6 +178,14 @@ bool Writer::write(const uint8_t* payload, size_t size) {
   return dds_writecdr(wr_, d) == DDS_RETCODE_OK;
 }
 
+size_t Writer::reader_count() const {
+  dds_publication_matched_status_t st;
+  if (dds_get_publication_matched_status(wr_, &st) < 0) {
+    return 0;
+  }
+  return static_cast<size_t>(st.current_count);
+}
+
 Reader::Reader(dds_entity_t participant, dds_entity_t dds_subscriber,
                const std::string& topic, const std::string& type_name, const QoS& qos) {
   struct ddsi_sertype* st = create_raw_sertype(type_name.c_str());

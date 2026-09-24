@@ -54,6 +54,30 @@ TEST(Comms, EndToEnd) {
   EXPECT_GT(received.load(), 0);
   EXPECT_EQ(last_name, "hello rcllite");
 
+  // --- publisher backpressure (real dds_get_publication_matched_status) ------
+  // A topic nobody subscribes to: publish(timeout) must hold the message and
+  // report the timeout instead of writing into the void.
+  auto lonely_pub = node_a->create_publisher<Parameter>("nobody_listens");
+  Parameter held_msg;
+  held_msg.name = "never dropped, just held";
+  EXPECT_FALSE(lonely_pub->publish(held_msg, 50ms));
+  EXPECT_EQ(lonely_pub->get_subscription_count(), 0u);
+
+  // With a subscriber coming up, wait_for_subscribers unblocks and the held
+  // message is delivered.  Writer-side matched can race the reader-side
+  // association (independent SEDP directions), so retry until it lands;
+  // exactly-once is asserted against the mock in publisher_test.
+  std::atomic<int> bp_received{0};
+  node_b->create_subscription<Parameter>("bp_chatter",
+                                         [&](const Parameter&) { ++bp_received; });
+  auto bp_pub = node_a->create_publisher<Parameter>("bp_chatter");
+  ASSERT_TRUE(bp_pub->wait_for_subscribers(10s));
+  for (int i = 0; i < 100 && bp_received.load() == 0; ++i) {
+    EXPECT_TRUE(bp_pub->publish(held_msg, 1s));
+    std::this_thread::sleep_for(10ms);
+  }
+  EXPECT_GE(bp_received.load(), 1);
+
   // --- complex message roundtrip (nested struct) ------------------------------
   std::atomic<int> clock_rx{0};
   int32_t stamp_sec = 0;

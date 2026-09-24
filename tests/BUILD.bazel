@@ -35,6 +35,16 @@ rcllite_cc_test(
 )
 
 rcllite_cc_test(
+    name = "publisher_test",
+    srcs = ["publisher_test.cpp"],
+    deps = [
+        "//src/rcllite:rcllite_under_test",
+        "//tests/mock:mock_ddsc",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+rcllite_cc_test(
     name = "service_test",
     srcs = ["service_test.cpp"],
     deps = [

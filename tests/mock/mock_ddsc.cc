@@ -51,6 +51,7 @@ struct ReaderState {
 
 struct WriterState {
   std::vector<std::vector<uint8_t>> written;
+  int32_t matched = 0;
   QosView qos{};
 };
 
@@ -136,6 +137,11 @@ void set_write_result(dds_return_t rc) {
 void set_matched_writers(dds_entity_t reader, int32_t count) {
   std::lock_guard<std::mutex> lock(internal::mtx);
   internal::readers[reader].matched = count;
+}
+
+void set_matched_readers(dds_entity_t writer, int32_t count) {
+  std::lock_guard<std::mutex> lock(internal::mtx);
+  internal::writers[writer].matched = count;
 }
 
 const QosView* writer_qos(dds_entity_t writer) {
@@ -357,6 +363,19 @@ dds_return_t dds_get_subscription_matched_status(
   status->current_count_change = 0;
   status->total_count = status->current_count;
   status->total_count_change = 0;
+  return DDS_RETCODE_OK;
+}
+
+dds_return_t dds_get_publication_matched_status(
+    dds_entity_t writer, dds_publication_matched_status_t* status) {
+  std::lock_guard<std::mutex> lock(mock_dds::internal::mtx);
+  auto it = mock_dds::internal::writers.find(writer);
+  status->current_count =
+      it != mock_dds::internal::writers.end() ? it->second.matched : 0;
+  status->current_count_change = 0;
+  status->total_count = status->current_count;
+  status->total_count_change = 0;
+  status->last_subscription_handle = 0;
   return DDS_RETCODE_OK;
 }
 
