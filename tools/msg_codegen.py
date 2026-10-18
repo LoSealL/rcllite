@@ -213,7 +213,21 @@ def emit_serialize(member: Member) -> str:
             f"w.write_uint32(static_cast<uint32_t>({f_}.size()));",
         ]
         if t in PRIM:
-            lines.append(f"for (const auto & e : {f_}) {{ w.write_{PRIM[t][0]}(e); }}")
+            # Bulk path: one aligned memcpy for the whole sequence -- the
+            # per-element writers' wire layout exactly, minus 2.7M-iteration
+            # loops on image-sized byte arrays (~85 ms -> sub-ms).  bool
+            # sequences keep the loop: std::vector<bool> is bit-packed and
+            # has no contiguous data().
+            if t == "bool":
+                lines.append(
+                    f"for (const auto & e : {f_}) {{ w.write_{PRIM[t][0]}(e); }}"
+                )
+            else:
+                lines.append(
+                    f"if (!{f_}.empty()) {{"
+                    f" w.write_aligned({f_}.data(),"
+                    f" {f_}.size() * sizeof({CPP_PRIM[t]}), sizeof({CPP_PRIM[t]})); }}"
+                )
         elif t == "string":
             lines.append(f"for (const auto & e : {f_}) {{ w.write_string(e); }}")
         else:
@@ -252,12 +266,22 @@ def emit_deserialize(member: Member) -> str:
         # the resize could allocate gigabytes (every element needs >= 1 byte)
         guard = "if (n > r.remaining()) { return false; }\n    "
         if t in PRIM:
+            # Bulk read (the serialize side's mirror): one aligned memcpy.
+            # bool keeps the loop (std::vector<bool> is bit-packed).
+            if t == "bool":
+                return (
+                    f"{{\n    r.align_to(4);\n    "
+                    f"const uint32_t n = r.read_uint32();\n    {guard}"
+                    f"{f_}.clear(); {f_}.resize(n);\n    "
+                    f"for (uint32_t i = 0; i < n; ++i) {{ "
+                    f"{f_}[i] = r.read_{PRIM[t][0]}(); }}\n  }}"
+                )
             return (
                 f"{{\n    r.align_to(4);\n    "
                 f"const uint32_t n = r.read_uint32();\n    {guard}"
                 f"{f_}.clear(); {f_}.resize(n);\n    "
-                f"for (uint32_t i = 0; i < n; ++i) {{ "
-                f"{f_}[i] = r.read_{PRIM[t][0]}(); }}\n  }}"
+                f"if (n) {{ r.align_to({PRIM[t][1]});"
+                f" r.read_bytes({f_}.data(), n * sizeof({CPP_PRIM[t]})); }}\n  }}"
             )
         if t == "string":
             return (
@@ -514,9 +538,7 @@ def main(argv=None) -> int:
     if args.anchor:
         # a declared output is <pkg-bin-dir>/rcllite_types/<package>/<file>.hpp:
         # strip the three tail components to recover the package bin dir
-        args.output = os.path.dirname(
-            os.path.dirname(os.path.dirname(args.anchor))
-        )
+        args.output = os.path.dirname(os.path.dirname(os.path.dirname(args.anchor)))
     out_dir = os.path.join(args.output, "rcllite_types", args.package)
     os.makedirs(out_dir, exist_ok=True)
 
