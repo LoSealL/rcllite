@@ -8,6 +8,7 @@
 
 namespace {
 
+using rcl::dds_type_name;
 using rcl::expand_topic_name;
 using rcl::make_fq_node_name;
 using rcl::ros_to_dds_reply_topic_name;
@@ -34,6 +35,14 @@ TEST(Names, ExpandTopicName) {
   EXPECT_EQ(expand_topic_name("chatter", "/"), "/chatter");
   EXPECT_EQ(expand_topic_name("chatter", "/robot"), "/robot/chatter");
   EXPECT_EQ(expand_topic_name("/abs", "/robot"), "/abs");
+}
+
+TEST(Names, DdsTypeName) {
+  EXPECT_EQ(dds_type_name("std_msgs/msg/String"), "std_msgs::msg::dds_::String_");
+  EXPECT_EQ(dds_type_name("sensor_msgs/msg/Image"), "sensor_msgs::msg::dds_::Image_");
+  EXPECT_EQ(dds_type_name("pkg::msg::dds_::Name_"), "pkg::msg::dds_::Name_");
+  EXPECT_THROW(dds_type_name("std_msgs.String"), rcl::Error);
+  EXPECT_THROW(dds_type_name("String"), rcl::Error);
 }
 
 TEST(Names, RejectsInvalidInput) {

@@ -55,6 +55,23 @@ std::string make_fq_node_name(const std::string& ns, const std::string& name) {
   return ns + "/" + name;
 }
 
+std::string dds_type_name(const std::string& type) {
+  if (type.find("::") != std::string::npos) {
+    return type;
+  }
+  const size_t cut = type.rfind('/');
+  if (cut == std::string::npos) {
+    throw rcl::Error(vila::InvalidArguments(
+        "type must be 'pkg/pkg/Name' or a full DDS name, got '{}'", type));
+  }
+  std::string dds_ns = type.substr(0, cut);
+  const size_t slash = dds_ns.find('/');
+  if (slash != std::string::npos) {
+    dds_ns.replace(slash, 1, "::");
+  }
+  return dds_ns + "::dds_::" + type.substr(cut + 1) + "_";
+}
+
 std::string expand_topic_name(const std::string& topic, const std::string& ns) {
   if (topic.empty()) {
     throw rcl::Error(vila::InvalidArguments("topic name must not be empty"));

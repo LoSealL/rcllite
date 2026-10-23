@@ -101,6 +101,11 @@ class Node : public std::enable_shared_from_this<Node> {
   /// Register a waitable entity.  Called by create_* implementations.
   void add_entity(std::shared_ptr<EntityBase> entity);
 
+  /// Unregister a waitable entity (bumps the epoch so executors re-attach;
+  /// the entity object itself survives until the last holder drops it, so an
+  /// executor mid-dispatch stays safe).
+  void remove_entity(const std::shared_ptr<EntityBase>& entity);
+
   /// Access (lazily creating) the parameter support: the six parameter
   /// services plus the /parameter_events publisher.
   ParameterCore& params() const;

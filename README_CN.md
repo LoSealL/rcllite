@@ -81,8 +81,8 @@ Windows 下 Bazel 自动探测 MSVC；Linux/macOS 使用 gcc/clang。各编译�
 
 ## Python 绑定（pyrcllite）
 
-基于 TVM FFI（vila 同款机制）的薄封装，覆盖三块能力——节点初始化/执行、
-运行图嗅探、拓扑执行：
+基于 TVM FFI（vila 同款机制）的薄封装，覆盖四块能力——节点初始化/执行、
+类型化 pub/sub、运行图嗅探、拓扑执行：
 
 ```bash
 pip install apache-tvm-ffi            # FFI 运行时（Bazel 构建也依赖它）
@@ -96,12 +96,21 @@ import pyrcllite
 node = pyrcllite.Node("talker")  # 上线即对 ros2 node list 可见
 node.spin_once(100)  # 或 node.spin() + node.cancel()
 
+pub = node.create_publisher(pyrcllite.String, "/chatter")  # 类型化 pub/sub：
+pub.publish(pyrcllite.String(data="hello"))  # CDR 编解码与 C++ 线格式逐字节一致
+
 with pyrcllite.GraphMonitor() as m:  # 嗅探运行图
     m.save("graph.json")
 with pyrcllite.GraphExecutor("topology.yaml") as e:  # 单进程拉起整个拓扑
     e.spin_once(100)
 ```
 
+- **Pub/sub**：`create_publisher` / `create_subscription` 配自带消息编解码
+  （std_msgs Empty/String、geometry_msgs PoseStamped/TransformStamped、
+  sensor_msgs Image/CameraInfo）与 `QoS`（depth / reliable /
+  transient-local latch）；`init_dds(tcp_port, peers, domain_id)` 在首个节点
+  前固定全 TCP 拓扑。与 ROS 2 / rcllite C++ 节点双向互通；回调在 spin
+  线程派发，`publish` 可在任意线程调用。
 - **GraphMonitor** / `python -m pyrcllite`：被动观察域上全部 rcllite / ROS 2
   节点（DDS 内建 topic + `ros_discovery_info` + `rt/rosout` 三路融合），输出
   有向数据流图（JSON / networkx GraphML）与节点日志。

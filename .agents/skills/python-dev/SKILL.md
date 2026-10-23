@@ -10,7 +10,10 @@ description: rcllite 的 Python 侧开发：pyrcllite 绑定的构建、FFI 库�
 ```
 python/pyrcllite/          纯 Python 包（定位 3.12）
   _ffi.py                  FFI 库定位与加载（cache 单例）
-  node.py                  Node 包装（句柄 + 专属 Executor）
+  node.py                  Node 包装（句柄 + 专属 Executor + pub/sub + init_dds）
+  qos.py                   QoS（depth / reliable / transient_local）
+  messages.py              类型化 CDR 编解码（String/Empty/PoseStamped/…）
+  pubsub.py                Publisher / Subscription 薄包装 + 回调 trampoline
   graph.py                 GraphMonitor（快照 / digraph / save）
   executor.py              GraphExecutor（拓扑 → 单进程拉起）+ registered_node_classes()
   __main__.py              独立抓图 CLI：python -m pyrcllite
@@ -21,10 +24,13 @@ apache-tvm-ffi (pip)       FFI 运行时（复用 vila 的机制；Bazel 侧经
 ```
 
 C++ 对象一律用 int64 handle 寻址（进程级 registry，handle 不复用，0 恒无效）；
-Python 侧只做薄包装（类型注解 + docstring）。FFI 导出分三组：
-`node_*`（生命周期 + spin/cancel）、`graph_*`
+Python 侧只做薄包装（类型注解 + docstring）。FFI 导出分四组：
+`node_*`（生命周期 + spin/cancel）、`init_dds + pub_* / sub_*`（DDS 预配置 +
+类型无关 CDR pub/sub：create/publish/destroy，订阅回调以
+`TypedFunction<void(Bytes)>` 跨 FFI，在 spin 线程派发）、`graph_*`
 （嗅探 start/stop/snapshot）、`graph_exec_*`（拓扑 create/spin/spin_once/
-cancel/status/destroy/registered_nodes）。
+cancel/status/destroy/registered_nodes）。C++ 侧类型名走
+`rcl::dds_type_name`（"pkg/msg/Name" → DDS 全名，非法即抛错）。
 
 ## 构建与安装
 
@@ -45,7 +51,7 @@ Windows 下加载前会把库所在目录注册为 DLL 搜索目录，以便解�
 DLL（libtvm_ffi）。加载失败的报错会列出全部尝试路径——排查时先确认
 `bazelisk build //src/ffi:rcllite_ffi` 是否成功、再看路径列表。
 
-## 三块能力
+## 四块能力
 
 ### 1. 节点初始化与执行（`node.py`）
 
@@ -63,6 +69,24 @@ node.destroy()  # 幂等；或用 with 语句
 ```
 
 后台 spin 模式见 `python/examples/bring_up_node.py`（threading + spin_once 循环）。
+
+### 1b. 类型化 pub/sub（`qos.py` + `messages.py` + `pubsub.py`）
+
+```python
+import pyrcllite
+
+pyrcllite.init_dds(7606, ["127.0.0.1:7601"])  # 可选：全 TCP 拓扑，须在首个 Node 前
+node = pyrcllite.Node("recon")
+pub = node.create_publisher(pyrcllite.String, "/map", pyrcllite.QoS.latched())
+sub = node.create_subscription(pyrcllite.Image, "/img", on_img, pyrcllite.QoS(30))
+pub.publish(pyrcllite.String(data="out/map.ply"))
+```
+
+自带编解码：Empty/String/PoseStamped/TransformStamped/Image/CameraInfo
+（`messages.py`，线格式与 C++ 逐字节一致，pytest golden 锁定）。非自带类型在
+create_* 即 TypeError（不静默失配）。回调在 spin 线程派发（FFI 已放 GIL），
+publish 任意线程可调；**返回的 Publisher/Subscription 必须保持引用**（GC 即
+销毁端点）。全量演示 `python/examples/pub_sub.py`（回环 + latch + TCP）。
 
 ### 2. 运行图嗅探（`graph.py`，C++ 侧 `src/rcllite/graph.hpp`）
 
