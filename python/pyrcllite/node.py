@@ -12,7 +12,7 @@ from types import TracebackType
 
 from ._ffi import ffi
 from .messages import WIRE_TYPES, Message
-from .pubsub import Publisher, Subscription, make_trampoline
+from .pubsub import Publisher, Subscription, _detach, make_trampoline
 from .qos import QoS
 
 # Nodes are torn down via atexit while the interpreter is still alive: a node
@@ -34,20 +34,27 @@ def init_dds(
     tcp_port: int | None = None,
     peers: Sequence[str] | None = None,
     domain_id: int | None = None,
+    interface: str = "127.0.0.1",
 ) -> None:
     """Fix the process DDS setup; call once, before creating the first node.
 
     ``tcp_port`` switches the participant to an all-TCP topology listening on
     that port and dialing exactly ``peers`` (``"host:port"`` entries; the
     node's own port is ignored if listed — never list a port that is not
-    running).  ``domain_id`` overrides ``ROS_DOMAIN_ID``.  An explicit
-    ``CYCLONEDDS_URI`` in the environment still wins over the generated TCP
-    config, so deployments can always override.
+    running).  ``domain_id`` overrides ``ROS_DOMAIN_ID``.  ``interface`` pins
+    the announced network interface by address: on multi-NIC hosts an
+    unpinned participant picks its primary interface at random, which makes
+    peerings fail non-deterministically.  The default loopback pin suits
+    same-machine topologies; pass the LAN address (e.g.
+    ``192.168.3.101``) when peers live on other machines, or ``""`` to leave
+    the choice to CycloneDDS.  An explicit ``CYCLONEDDS_URI`` in the
+    environment still wins over the generated TCP config.
     """
     ffi().init_dds(
         tcp_port if tcp_port else 0,
         list(peers) if peers else [],
         domain_id if domain_id is not None else -1,
+        interface,
     )
 
 
@@ -85,6 +92,10 @@ class Node:
         self._name = self._ffi.node_name(self._handle)
         self._namespace = self._ffi.node_namespace(self._handle)
         self._fq_name = self._ffi.node_fully_qualified_name(self._handle)
+        # The node owns its endpoints (rclpy semantics): a dropped return
+        # value of create_* must not tear the DDS endpoint down — the object
+        # merely gets GC'd, the endpoint survives until node.destroy().
+        self._endpoints: list[Publisher | Subscription] = []
         _TRACKED_NODES.add(self)
 
     @property
@@ -132,7 +143,9 @@ class Node:
             qos.reliable,
             qos.transient_local,
         )
-        return Publisher(self._ffi, handle, msg_type, topic)
+        pub = Publisher(self._ffi, handle, msg_type, topic)
+        self._endpoints.append(pub)
+        return pub
 
     def create_subscription[T: Message](
         self,
@@ -156,17 +169,27 @@ class Node:
             qos.transient_local,
             make_trampoline(msg_type, callback),
         )
-        return Subscription(self._ffi, handle, msg_type, topic)
+        sub = Subscription(self._ffi, handle, msg_type, topic)
+        self._endpoints.append(sub)
+        return sub
 
     def cancel(self) -> None:
         """Stop a running :meth:`spin` from any thread."""
         self._ffi.node_cancel(self._handle)
 
     def destroy(self) -> None:
-        """Tear the node down (cancelling any running spin); idempotent."""
+        """Tear the node down (cancelling any running spin); idempotent.
+
+        Destroys the node's endpoints too — their own ``destroy()`` calls
+        afterwards are silent no-ops (the C++ registry no longer knows the
+        handles).
+        """
         if getattr(self, "_handle", 0):
             self._ffi.node_destroy(self._handle)
             self._handle = 0
+        for endpoint in self._endpoints:
+            _detach(endpoint)
+        self._endpoints.clear()
         _TRACKED_NODES.discard(self)
 
     def __enter__(self) -> Node:

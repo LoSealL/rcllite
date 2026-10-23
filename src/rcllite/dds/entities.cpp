@@ -105,11 +105,16 @@ std::string default_config_xml(bool localhost_only) {
          "</Discovery></Domain></CycloneDDS>";
 }
 
-std::string tcp_config_xml(uint16_t port, const std::vector<std::string>& peers) {
+std::string tcp_config_xml(uint16_t port, const std::vector<std::string>& peers,
+                           const std::string& interface) {
   std::string xml =
       "<CycloneDDS xmlns=\"https://cdds.io/config\"><Domain>"
-      "<General><Transport>tcp</Transport><AllowMulticast>false</AllowMulticast></"
-      "General>"
+      "<General><Transport>tcp</Transport><AllowMulticast>false</AllowMulticast>";
+  if (!interface.empty()) {
+    xml += "<Interfaces><NetworkInterface address=\"" + interface + "\"/></Interfaces>";
+  }
+  xml +=
+      "</General>"
       "<Discovery><ParticipantIndex>auto</ParticipantIndex><Peers>";
   for (const auto& peer : peers) {
     xml += "<Peer Address=\"" + peer + "\"/>";

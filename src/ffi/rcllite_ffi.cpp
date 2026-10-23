@@ -179,7 +179,7 @@ void check_cdr_payload(const tvm::ffi::Bytes& payload, const std::string& topic)
 }
 
 void InitDds_(int64_t tcp_port, const std::vector<std::string>& peers,
-              int64_t domain_id) {
+              int64_t domain_id, const std::string& interface) {
   if (tcp_port > 0xFFFF) {
     TVM_FFI_THROW(ValueError) << "tcp_port out of range: " << tcp_port;
   }
@@ -197,7 +197,7 @@ void InitDds_(int64_t tcp_port, const std::vector<std::string>& peers,
         dial.push_back(peer);
       }
     }
-    xml = rcl::dds::tcp_config_xml(static_cast<uint16_t>(tcp_port), dial);
+    xml = rcl::dds::tcp_config_xml(static_cast<uint16_t>(tcp_port), dial, interface);
   }
   const std::optional<uint32_t> domain =
       domain_id >= 0 ? std::optional<uint32_t>(static_cast<uint32_t>(domain_id))

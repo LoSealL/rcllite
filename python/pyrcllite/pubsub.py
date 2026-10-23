@@ -29,9 +29,15 @@ def _destroy_tracked() -> None:
             pass  # best effort during shutdown
 
 
+def _detach(endpoint: Publisher | Subscription) -> None:
+    """Mark an endpoint dead without crossing the FFI (node teardown owns it)."""
+    endpoint._handle = 0  # pylint: disable=protected-access
+    _TRACKED.discard(endpoint)
+
+
 def _destroy_from_del(ffi: tvm_ffi.Module, method: str, handle: int) -> None:
-    if sys.is_finalizing():
-        return  # the process is dying; crossing FFI now is unsafe (leak it)
+    if handle == 0 or sys.is_finalizing():
+        return  # dead handle, or the process is dying (FFI is unsafe now)
     getattr(ffi, method)(handle)
 
 

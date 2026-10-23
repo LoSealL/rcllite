@@ -2,9 +2,10 @@
 # Licensed under the Apache License, Version 2.0
 """Node pub/sub API wiring tests against a fake FFI (no DLL / DDS needed)."""
 
+import gc
+
 # Test names state the scenario; fixtures arrive as pytest-injected arguments.
 # pylint: disable=missing-function-docstring,redefined-outer-name,unused-argument
-
 from typing import Any, cast
 
 import pytest
@@ -44,8 +45,8 @@ class FakeFFI:
     def node_destroy(self, _h):
         self.calls.append(("node_destroy",))
 
-    def init_dds(self, port, peers, domain):
-        self.calls.append(("init_dds", port, peers, domain))
+    def init_dds(self, port, peers, domain, interface):
+        self.calls.append(("init_dds", port, peers, domain, interface))
 
     def pub_create(self, node, topic, type_name, depth, reliable, transient_local):
         self.calls.append((
@@ -166,9 +167,35 @@ def test_destroy_is_idempotent(fake_ffi):
 
 def test_init_dds_argument_mapping(fake_ffi):
     pyrcllite.init_dds()
-    assert fake_ffi.calls == [("init_dds", 0, [], -1)]
+    assert fake_ffi.calls == [("init_dds", 0, [], -1, "127.0.0.1")]
     pyrcllite.init_dds(tcp_port=7606, peers=["127.0.0.1:7601"], domain_id=42)
-    assert fake_ffi.calls[-1] == ("init_dds", 7606, ["127.0.0.1:7601"], 42)
+    assert fake_ffi.calls[-1] == (
+        "init_dds",
+        7606,
+        ["127.0.0.1:7601"],
+        42,
+        "127.0.0.1",
+    )
+    pyrcllite.init_dds(tcp_port=7606, interface="192.168.3.101")
+    assert fake_ffi.calls[-1] == ("init_dds", 7606, [], -1, "192.168.3.101")
+
+
+def test_node_owns_endpoints(fake_ffi):
+    # rclpy semantics: dropping the return value of create_* must not tear
+    # the DDS endpoint down (a trace of exactly this bug showed the reader
+    # deleted 44us after creation, silently never matching any writer).
+    node = pyrcllite.Node("n")
+    node.create_publisher(pyrcllite.String, "/t")
+    node.create_subscription(pyrcllite.String, "/t", lambda _m: None)
+    gc.collect()
+    destroys = [c for c in fake_ffi.calls if c[0] in ("pub_destroy", "sub_destroy")]
+    assert destroys == []
+    # the ownership itself is under test, so reach into the node
+    assert len(node._endpoints) == 2  # pylint: disable=protected-access
+    node.destroy()
+    # After node.destroy the endpoints are already gone C++-side; their
+    # handles are stale and the fake records no extra destroys.
+    assert not [c for c in fake_ffi.calls if c[0] in ("pub_destroy", "sub_destroy")]
 
 
 def test_trampoline_requires_callable(fake_ffi):

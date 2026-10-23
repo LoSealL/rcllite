@@ -172,8 +172,13 @@ std::string default_config_xml(bool localhost_only);
 
 /// All-TCP CycloneDDS config fragment: the participant listens on `port` and
 /// dials exactly the given peers ("host:port").  No multicast, no shared
-/// memory — the recipe rmw deployments on locked-down networks use.
-std::string tcp_config_xml(uint16_t port, const std::vector<std::string>& peers);
+/// memory — the recipe rmw deployments on locked-down networks use.  A
+/// non-empty `interface` additionally pins the network interface by address
+/// (e.g. "127.0.0.1" for same-machine topologies); with several NICs an
+/// unpinned participant picks its primary at random and announces it as its
+/// SPDP locator, which makes data channels fail non-deterministically.
+std::string tcp_config_xml(uint16_t port, const std::vector<std::string>& peers,
+                           const std::string& interface = "");
 
 }  // namespace dds
 }  // namespace rcl

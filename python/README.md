@@ -81,8 +81,9 @@ dataclass with `_write`/`_read` following the same CDR rules.
   callback).  `publish` may be called from any thread — including from
   inside a subscription callback; a raising Python callback is logged and
   skipped, it never kills the spin loop.
-- **Keep the returned `Publisher` / `Subscription` objects alive** — they
-  destroy their DDS endpoint on garbage collection.
+- **Ownership**: the node owns its endpoints (rclpy semantics) — dropping
+  the return value of `create_*` is safe; the endpoint lives until
+  `node.destroy()` (or its own explicit `destroy()`).
 - Payloads cross the FFI as one copied `bytes` per message (2.7 MB rgb8
   frames measure a full 10 fps round-trip through DDS loopback).
 
@@ -97,9 +98,13 @@ pyrcllite.init_dds(tcp_port=7606, peers=["127.0.0.1:7601"], domain_id=0)
 ```
 
 The node then listens on `tcp_port` and dials exactly `peers` — never list
-a port that is not running (the node's own port is ignored if listed).  An
-explicit `CYCLONEDDS_URI` in the environment always wins over the
-generated config.
+a port that is not running (the node's own port is ignored if listed).  On
+multi-NIC hosts `interface` (default `127.0.0.1`) pins which interface's
+address is announced — unpinned, CycloneDDS picks its primary interface at
+random and peerings fail non-deterministically.  Pass the LAN address
+(e.g. `192.168.3.101`) when the peers live on other machines, `""` to
+leave it to CycloneDDS.  An explicit `CYCLONEDDS_URI` in the environment
+always wins over the generated config.
 
 Runnable demo (in-process loopback + transient-local latch + optional TCP):
 

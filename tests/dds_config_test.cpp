@@ -21,8 +21,19 @@ TEST(DdsConfig, TcpConfigXml) {
   EXPECT_NE(xml.find("<Peer Address=\"127.0.0.1:7601\"/>"), std::string::npos);
   EXPECT_NE(xml.find("<Peer Address=\"10.0.0.5:7600\"/>"), std::string::npos);
   EXPECT_NE(xml.find("<AllowMulticast>false</AllowMulticast>"), std::string::npos);
+  // Without an interface pin no Interfaces section is emitted.
+  EXPECT_EQ(xml.find("Interfaces"), std::string::npos);
   EXPECT_EQ(xml.find("address="),
             std::string::npos);  // lowercase attr would not match rmw
+}
+
+TEST(DdsConfig, TcpConfigXmlInterfacePin) {
+  const std::string xml = tcp_config_xml(7606, {}, "127.0.0.1");
+  EXPECT_NE(xml.find("<Interfaces><NetworkInterface address=\"127.0.0.1\"/>"
+                     "</Interfaces>"),
+            std::string::npos);
+  // The pin rides inside General, before the Discovery section.
+  EXPECT_LT(xml.find("Interfaces"), xml.find("Discovery"));
 }
 
 TEST(DdsConfig, ContextConfigureLifecycle) {
