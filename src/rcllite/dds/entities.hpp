@@ -171,7 +171,10 @@ class GuardCondition {
 std::string default_config_xml(bool localhost_only);
 
 /// All-TCP CycloneDDS config fragment: the participant listens on `port` and
-/// dials exactly the given peers ("host:port").  No multicast, no shared
+/// dials exactly the given peers ("host:port"); with no peers it dials its
+/// own listener instead, which keeps a pure acceptor discoverable (an empty
+/// peer list makes CycloneDDS fall back to dead well-known SPDP ports and
+/// stalls discovery).  No multicast, no shared
 /// memory — the recipe rmw deployments on locked-down networks use.  A
 /// non-empty `interface` additionally pins the network interface by address
 /// (e.g. "127.0.0.1" for same-machine topologies); with several NICs an

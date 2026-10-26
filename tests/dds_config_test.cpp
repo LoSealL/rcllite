@@ -36,6 +36,26 @@ TEST(DdsConfig, TcpConfigXmlInterfacePin) {
   EXPECT_LT(xml.find("Interfaces"), xml.find("Discovery"));
 }
 
+TEST(DdsConfig, TcpConfigXmlSelfDialsWhenPeersEmpty) {
+  // Zero peers must still emit one live Peer: an empty <Peers> element is
+  // "unconfigured" to CycloneDDS, which then dials dead well-known SPDP
+  // ports on localhost and starves discovery — a pure TCP acceptor would
+  // never answer SPDP/SEDP to peers that dialed in.
+  const std::string xml = tcp_config_xml(7613, {});
+  EXPECT_NE(xml.find("<Peer Address=\"127.0.0.1:7613\"/>"), std::string::npos);
+  // A pinned interface rides along into the self-dial address.
+  const std::string lan = tcp_config_xml(7613, {}, "192.168.3.101");
+  EXPECT_NE(lan.find("<Peer Address=\"192.168.3.101:7613\"/>"), std::string::npos);
+}
+
+TEST(DdsConfig, TcpConfigXmlNoSelfDialWithPeers) {
+  // With real peers configured the fallback never triggers, so the own port
+  // must not appear as a peer.
+  const std::string xml = tcp_config_xml(7606, {"127.0.0.1:7601"});
+  EXPECT_NE(xml.find("<Peer Address=\"127.0.0.1:7601\"/>"), std::string::npos);
+  EXPECT_EQ(xml.find("127.0.0.1:7606"), std::string::npos);
+}
+
 TEST(DdsConfig, ContextConfigureLifecycle) {
   // configure() before the first instantiation installs the overrides ...
   Context::configure(std::optional<uint32_t>(7), tcp_config_xml(7606, {}));

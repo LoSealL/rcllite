@@ -119,6 +119,19 @@ std::string tcp_config_xml(uint16_t port, const std::vector<std::string>& peers,
   for (const auto& peer : peers) {
     xml += "<Peer Address=\"" + peer + "\"/>";
   }
+  if (peers.empty()) {
+    // An empty <Peers> element reads as "unconfigured" to CycloneDDS: it
+    // then falls back to dialing localhost well-known SPDP ports
+    // (MaxAutoParticipantIndex of them), and over TCP those dead dials
+    // serially stall the transmit thread for seconds each, starving SPDP
+    // responses and SEDP to peers that dialed in — a pure acceptor never
+    // completes discovery.  Dialing our own listener — alive by
+    // construction — suppresses the fallback.  The listener binds
+    // INADDR_ANY, so loopback reaches it even when `interface` pins a LAN
+    // address.
+    xml += "<Peer Address=\"" + (interface.empty() ? "127.0.0.1" : interface) + ":" +
+           std::to_string(port) + "\"/>";
+  }
   xml +=
       "</Peers></Discovery>"
       "<TCP><Port>" +
