@@ -55,25 +55,6 @@ std::vector<uint8_t> payload_from_hex(const std::string& hex, const std::string&
 /// message for field-less types; receivers of typed topics will drop it).
 std::vector<uint8_t> default_payload() { return {0x00, 0x01, 0x00, 0x00}; }
 
-/// Accept the full DDS type name ("pkg::msg::dds_::Name_") or the friendly
-/// ROS form ("pkg/msg/Name").
-std::string normalize_type(const std::string& type) {
-  if (type.find("::") != std::string::npos) {
-    return type;
-  }
-  const size_t cut = type.rfind('/');
-  if (cut == std::string::npos) {
-    throw Error(vila::InvalidArguments(
-        "type must be 'pkg/pkg/Name' or a full DDS name, got '{}'", type));
-  }
-  std::string dds_ns = type.substr(0, cut);
-  const size_t slash = dds_ns.find('/');
-  if (slash != std::string::npos) {
-    dds_ns.replace(slash, 1, "::");
-  }
-  return dds_ns + "::dds_::" + type.substr(cut + 1) + "_";
-}
-
 QoS parse_qos(const Json& qos, QoS base) {
   if (!qos.is_object()) {
     return base;
@@ -229,7 +210,7 @@ struct GraphExecutor::Impl {
       throw Error(vila::InvalidArguments("{}: needs 'topic' and 'type'", what));
     }
     auto pub = std::make_shared<RawPublisher>();
-    pub->type = normalize_type(spec.at("type").get<std::string>());
+    pub->type = dds_type_name(spec.at("type").get<std::string>());
     const std::string ros_topic =
         expand_topic_name(spec.at("topic").get<std::string>(), entry.namespace_);
     pub->topic = ros_topic;
@@ -251,7 +232,7 @@ struct GraphExecutor::Impl {
       throw Error(vila::InvalidArguments("{}: needs 'topic' and 'type'", what));
     }
     auto sub = std::make_shared<RawSubscription>();
-    sub->type = normalize_type(spec.at("type").get<std::string>());
+    sub->type = dds_type_name(spec.at("type").get<std::string>());
     const std::string ros_topic =
         expand_topic_name(spec.at("topic").get<std::string>(), entry.namespace_);
     sub->topic = ros_topic;

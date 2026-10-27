@@ -75,6 +75,15 @@ rcllite_cc_test(
 )
 
 rcllite_cc_test(
+    name = "dds_config_test",
+    srcs = ["dds_config_test.cpp"],
+    deps = [
+        "//src/rcllite",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+rcllite_cc_test(
     name = "cdr_test",
     srcs = ["cdr_test.cpp"],
     deps = [

@@ -2,11 +2,12 @@
 
 Python bindings for [rcllite](../README.md), built on
 [TVM FFI](https://github.com/apache/tvm-ffi) — the same mechanism vila uses.
-Two areas are covered: **node initialization and execution** (creating a
+Three areas are covered: **node initialization and execution** (creating a
 node brings a ROS 2-visible participant onto the DDS graph, and the
-executor calls keep it alive and processing), and **runtime graph
-sniffing** (observing all live nodes and saving the directed data-flow
-graph).
+executor calls keep it alive and processing), **typed pub/sub** (exchange
+the shipped ROS 2 message types with ROS 2 / rcllite C++ peers), and
+**runtime graph sniffing** (observing all live nodes and saving the
+directed data-flow graph).
 
 ## Setup
 
@@ -43,6 +44,73 @@ node.cancel()  # Executor.cancel() semantics
 spinner.join()
 
 node.destroy()  # or use `with pyrcllite.Node(...) as n:`
+```
+
+## Pub / sub
+
+Nodes exchange the shipped message types (`pyrcllite/messages.py`) with
+rclpy-shaped `create_publisher` / `create_subscription`.  The FFI layer is
+type-agnostic (raw CDR + ROS type name); the Python codecs mirror rcllite's
+C++ serializer byte for byte, so the endpoints interoperate directly with
+ROS 2 and rcllite C++ nodes — verified bidirectionally against the native
+Windows C++ talker/listener.
+
+```python
+import pyrcllite
+
+node = pyrcllite.Node("recon")
+pub = node.create_publisher(pyrcllite.String, "/map", pyrcllite.QoS.latched())
+sub = node.create_subscription(
+    pyrcllite.Image, "/camera/color", on_image, pyrcllite.QoS(depth=30)
+)
+pub.publish(pyrcllite.String(data="out/map.ply"))
+```
+
+Shipped types: `Empty`, `String`, `PoseStamped`, `TransformStamped`,
+`Image`, `CameraInfo` (plus their nested structs in `pyrcllite.messages`).
+Passing anything else raises `TypeError` up front — a wrong type name must
+fail loudly, never silently never-match on the wire.  Extend by adding a
+dataclass with `_write`/`_read` following the same CDR rules.
+
+- **QoS**: `QoS(depth, reliable, transient_local)`; `QoS.sensor_data()` /
+  `QoS.latched()` presets.  Transient-local latches the **last** sample for
+  late joiners regardless of depth (same one-sample discipline as the C++
+  nodes).
+- **Threading**: callbacks run on the thread calling `spin` / `spin_once`
+  (TVM FFI releases the GIL around the spin and re-acquires it per
+  callback).  `publish` may be called from any thread — including from
+  inside a subscription callback; a raising Python callback is logged and
+  skipped, it never kills the spin loop.
+- **Ownership**: the node owns its endpoints (rclpy semantics) — dropping
+  the return value of `create_*` is safe; the endpoint lives until
+  `node.destroy()` (or its own explicit `destroy()`).
+- Payloads cross the FFI as one copied `bytes` per message (2.7 MB rgb8
+  frames measure a full 10 fps round-trip through DDS loopback).
+
+### DDS configuration (`init_dds`)
+
+By default participants follow `ROS_DOMAIN_ID` / `ROS_LOCALHOST_ONLY` and
+standard discovery.  For an all-TCP topology (the locked-down deployment
+recipe), call `init_dds` **before creating the first node**:
+
+```python
+pyrcllite.init_dds(tcp_port=7606, peers=["127.0.0.1:7601"], domain_id=0)
+```
+
+The node then listens on `tcp_port` and dials exactly `peers` — never list
+a port that is not running (the node's own port is ignored if listed).  On
+multi-NIC hosts `interface` (default `127.0.0.1`) pins which interface's
+address is announced — unpinned, CycloneDDS picks its primary interface at
+random and peerings fail non-deterministically.  Pass the LAN address
+(e.g. `192.168.3.101`) when the peers live on other machines, `""` to
+leave it to CycloneDDS.  An explicit `CYCLONEDDS_URI` in the environment
+always wins over the generated config.
+
+Runnable demo (in-process loopback + transient-local latch + optional TCP):
+
+```bash
+python python/examples/pub_sub.py
+python python/examples/pub_sub.py --sub-only --topic /stlp_talk  # C++ interop
 ```
 
 ## Graph sniffing

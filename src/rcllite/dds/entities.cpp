@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <thread>
@@ -15,9 +16,16 @@ namespace rcl {
 namespace dds {
 
 namespace {
-
 std::once_flag g_ctx_once;
 Context* g_ctx = nullptr;
+
+// Heap-allocated so no global std::string ever runs a static constructor.
+struct DdsConfigOverrides {
+  std::optional<uint32_t> domain_id;
+  std::string config_xml;
+};
+std::mutex g_cfg_mtx;
+std::unique_ptr<DdsConfigOverrides> g_cfg;
 
 uint32_t env_domain_id() {
   const char* env = std::getenv("ROS_DOMAIN_ID");
@@ -56,8 +64,27 @@ void Context::shutdown() {
   // rcllite keeps no extra state here.
 }
 
+void Context::configure(const std::optional<uint32_t>& domain_id,
+                        const std::string& config_xml) {
+  std::lock_guard<std::mutex> lock(g_cfg_mtx);
+  if (g_ctx != nullptr) {
+    throw Error(vila::InvalidArguments(
+        "Context::configure must run before the first node creates the context"));
+  }
+  g_cfg =
+      std::make_unique<DdsConfigOverrides>(DdsConfigOverrides{domain_id, config_xml});
+}
+
 Context::Context()
-    : domain_id_(env_domain_id()), localhost_only_(env_localhost_only()) {}
+    : domain_id_(env_domain_id()), localhost_only_(env_localhost_only()) {
+  std::lock_guard<std::mutex> lock(g_cfg_mtx);
+  if (g_cfg != nullptr) {
+    if (g_cfg->domain_id.has_value()) {
+      domain_id_ = *g_cfg->domain_id;
+    }
+    config_xml_ = g_cfg->config_xml;
+  }
+}
 
 std::string default_config_xml(bool localhost_only) {
   // When the user provided CYCLONEDDS_URI we leave everything to it;
@@ -76,6 +103,43 @@ std::string default_config_xml(bool localhost_only) {
          "<MaxAutoParticipantIndex>32</MaxAutoParticipantIndex>"
          "<Peers><Peer address=\"localhost\"/></Peers>"
          "</Discovery></Domain></CycloneDDS>";
+}
+
+std::string tcp_config_xml(uint16_t port, const std::vector<std::string>& peers,
+                           const std::string& interface) {
+  std::string xml =
+      "<CycloneDDS xmlns=\"https://cdds.io/config\"><Domain>"
+      "<General><Transport>tcp</Transport><AllowMulticast>false</AllowMulticast>";
+  if (!interface.empty()) {
+    xml += "<Interfaces><NetworkInterface address=\"" + interface + "\"/></Interfaces>";
+  }
+  xml +=
+      "</General>"
+      "<Discovery><ParticipantIndex>auto</ParticipantIndex><Peers>";
+  for (const auto& peer : peers) {
+    xml += "<Peer Address=\"" + peer + "\"/>";
+  }
+  if (peers.empty()) {
+    // An empty <Peers> element reads as "unconfigured" to CycloneDDS: it
+    // then falls back to dialing localhost well-known SPDP ports
+    // (MaxAutoParticipantIndex of them), and over TCP those dead dials
+    // serially stall the transmit thread for seconds each, starving SPDP
+    // responses and SEDP to peers that dialed in — a pure acceptor never
+    // completes discovery.  Dialing our own listener — alive by
+    // construction — suppresses the fallback.  The listener binds
+    // INADDR_ANY, so loopback reaches it even when `interface` pins a LAN
+    // address.
+    xml += "<Peer Address=\"" + (interface.empty() ? "127.0.0.1" : interface) + ":" +
+           std::to_string(port) + "\"/>";
+  }
+  xml +=
+      "</Peers></Discovery>"
+      "<TCP><Port>" +
+      std::to_string(port) +
+      "</Port><NoDelay>true</NoDelay>"
+      "<AlwaysUsePeeraddrForUnicast>true</AlwaysUsePeeraddrForUnicast></TCP>"
+      "</Domain></CycloneDDS>";
+  return xml;
 }
 
 dds_qos_t* make_dds_qos(const QoS& qos) {
@@ -99,11 +163,20 @@ dds_qos_t* make_dds_qos(const QoS& qos) {
 
 Participant::Participant(uint32_t domain_id, const std::string& enclave) {
   // Compose the domain configuration exactly like rmw_cyclonedds does:
-  // an optional localhost fragment, then the user's CYCLONEDDS_URI (which
-  // CycloneDDS does NOT pick up on its own when a non-NULL config is passed,
-  // and which we must pass explicitly because we always call
-  // dds_create_domain).  Fragments are comma-separated.
+  // an optional localhost fragment, then any configure() fragment (e.g. a
+  // TCP topology), then the user's CYCLONEDDS_URI (which CycloneDDS does NOT
+  // pick up on its own when a non-NULL config is passed, and which we must
+  // pass explicitly because we always call dds_create_domain).  Fragments are
+  // comma-separated; later fragments override earlier ones, so an explicit
+  // CYCLONEDDS_URI always wins.
   std::string cfg = default_config_xml(Context::instance().localhost_only());
+  const std::string& extra = Context::instance().config_xml();
+  if (!extra.empty()) {
+    if (!cfg.empty()) {
+      cfg += ",";
+    }
+    cfg += extra;
+  }
   if (const char* env = std::getenv("CYCLONEDDS_URI")) {
     if (!cfg.empty()) {
       cfg += ",";

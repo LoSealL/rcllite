@@ -25,6 +25,11 @@ std::string make_fq_node_name(const std::string& ns, const std::string& name);
 /// Expand "foo" in namespace "/ns" into "/ns/foo"; "/foo" stays "/foo".
 std::string expand_topic_name(const std::string& topic, const std::string& ns);
 
+/// Normalize a message type name: accepts the friendly ROS form
+/// ("pkg/msg/Name") or the full DDS name ("pkg::msg::dds_::Name_") and
+/// returns the DDS name every rmw puts on the wire.  Anything else throws.
+std::string dds_type_name(const std::string& type);
+
 }  // namespace rcl
 
 #endif  // RCLLITE__NAMES_HPP_

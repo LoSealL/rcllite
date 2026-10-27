@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0
 #include "rcllite/node.hpp"
 
+#include <algorithm>
 #include <cstring>
 
 #include "rcllite/exception.hpp"
@@ -82,6 +83,16 @@ void Node::add_entity(std::shared_ptr<EntityBase> entity) {
   {
     std::lock_guard<std::mutex> lock(entities_mtx_);
     entities_.push_back(std::move(entity));
+    ++entity_epoch_;
+  }
+  change_guard_->trigger();
+}
+
+void Node::remove_entity(const std::shared_ptr<EntityBase>& entity) {
+  {
+    std::lock_guard<std::mutex> lock(entities_mtx_);
+    entities_.erase(std::remove(entities_.begin(), entities_.end(), entity),
+                    entities_.end());
     ++entity_epoch_;
   }
   change_guard_->trigger();

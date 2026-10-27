@@ -95,8 +95,9 @@ per-compiler flags (MSVC `/W4 /utf-8 /bigobj ...`, gcc/clang
 
 ## Python bindings (pyrcllite)
 
-A thin wrapper on TVM FFI (same mechanism as vila), covering three
-capabilities — node init/spin, live graph sniffing, and topology execution:
+A thin wrapper on TVM FFI (same mechanism as vila), covering four
+capabilities — node init/spin, typed pub/sub, live graph sniffing, and
+topology execution:
 
 ```bash
 pip install apache-tvm-ffi            # FFI runtime (also needed by the Bazel build)
@@ -110,6 +111,9 @@ import pyrcllite
 node = pyrcllite.Node("talker")  # visible to ros2 node list as soon as it comes up
 node.spin_once(100)  # or node.spin() + node.cancel()
 
+pub = node.create_publisher(pyrcllite.String, "/chatter")  # typed pub/sub:
+pub.publish(pyrcllite.String(data="hello"))  # CDR codecs mirror the C++ wire
+
 with pyrcllite.GraphMonitor() as m:  # sniff the live graph
     m.save("graph.json")
 with pyrcllite.GraphExecutor(
@@ -118,6 +122,13 @@ with pyrcllite.GraphExecutor(
     e.spin_once(100)
 ```
 
+- **Pub/sub**: `create_publisher` / `create_subscription` with the shipped
+  message codecs (`std_msgs` Empty/String, `geometry_msgs` PoseStamped /
+  TransformStamped, `sensor_msgs` Image / CameraInfo) and `QoS` (depth /
+  reliable / transient-local latch); `init_dds(tcp_port, peers, domain_id)`
+  fixes an all-TCP topology before the first node.  Interoperates with
+  ROS 2 and rcllite C++ peers bidirectionally; callbacks run on the spin
+  thread, `publish` from any thread.
 - **GraphMonitor** / `python -m pyrcllite`: passively observes all rcllite /
   ROS 2 nodes on the domain (fusion of DDS built-in topics +
   `ros_discovery_info` + `rt/rosout`), producing a directed data-flow graph

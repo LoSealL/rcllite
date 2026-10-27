@@ -9,7 +9,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
 #include "dds/dds.h"
 #include "rcllite/dds/raw_serdata.hpp"
@@ -27,8 +29,17 @@ class Context {
   static void init() { instance(); }
   static void shutdown();
 
+  /// Install pre-init overrides: a fixed domain id and/or an extra config
+  /// fragment (comma-joined CycloneDDS XML, see tcp_config_xml).  Must be
+  /// called before the context is first instantiated — i.e. before the first
+  /// node — otherwise it throws.  An operator-supplied CYCLONEDDS_URI still
+  /// wins over the fragment (later fragments override earlier ones).
+  static void configure(const std::optional<uint32_t>& domain_id,
+                        const std::string& config_xml);
+
   uint32_t domain_id() const { return domain_id_; }
   bool localhost_only() const { return localhost_only_; }
+  const std::string& config_xml() const { return config_xml_; }
 
  private:
   Context();
@@ -38,6 +49,7 @@ class Context {
 
   uint32_t domain_id_ = 0;
   bool localhost_only_ = false;
+  std::string config_xml_;
 };
 
 /// Convert rcllite QoS into a dds_qos_t (caller deletes with dds_delete_qos).
@@ -157,6 +169,19 @@ class GuardCondition {
 /// Serialize QoS values into a CycloneDDS config fragment honoring
 /// ROS_LOCALHOST_ONLY (mirrors rcl's default localhost-only on macOS/Windows).
 std::string default_config_xml(bool localhost_only);
+
+/// All-TCP CycloneDDS config fragment: the participant listens on `port` and
+/// dials exactly the given peers ("host:port"); with no peers it dials its
+/// own listener instead, which keeps a pure acceptor discoverable (an empty
+/// peer list makes CycloneDDS fall back to dead well-known SPDP ports and
+/// stalls discovery).  No multicast, no shared
+/// memory — the recipe rmw deployments on locked-down networks use.  A
+/// non-empty `interface` additionally pins the network interface by address
+/// (e.g. "127.0.0.1" for same-machine topologies); with several NICs an
+/// unpinned participant picks its primary at random and announces it as its
+/// SPDP locator, which makes data channels fail non-deterministically.
+std::string tcp_config_xml(uint16_t port, const std::vector<std::string>& peers,
+                           const std::string& interface = "");
 
 }  // namespace dds
 }  // namespace rcl
