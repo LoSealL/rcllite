@@ -37,8 +37,8 @@ void Executor::add_node(std::shared_ptr<Node> node) {
   {
     std::lock_guard<std::mutex> lock(nodes_mtx_);
     if (std::find(nodes_.begin(), nodes_.end(), node) == nodes_.end()) {
-      nodes_.push_back(node);
       node_epochs_.erase(node.get());
+      nodes_.push_back(std::move(node));
     }
     reconcile_locked();
   }
@@ -113,9 +113,9 @@ bool Executor::wait_and_process(dds_duration_t timeout) {
     }
   }
 
-  constexpr size_t MAX_TRIGGERS = 64;
-  dds_attach_t triggered[MAX_TRIGGERS];
-  const dds_return_t n = dds_waitset_wait(waitset_, triggered, MAX_TRIGGERS, timeout);
+  constexpr size_t kMaxTriggers = 64;
+  dds_attach_t triggered[kMaxTriggers];
+  const dds_return_t n = dds_waitset_wait(waitset_, triggered, kMaxTriggers, timeout);
   if (n < 0) {
     throw Error(vila::InternalError("dds_waitset_wait failed: {}", n));
   }

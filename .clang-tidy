@@ -1,0 +1,105 @@
+# rcllite C++ checks: strict on first-party code, quiet on style opinions the
+# codebase deliberately rejects.
+#
+# Style baseline (ROS C++ style, the codebase's dominant convention, enforced
+# here):
+#   functions/locals/params/members snake_case · class members and statics
+#   carry a trailing '_' · types and enum constants PascalCase · constants
+#   kPascalCase · process globals g_ + snake_case · macros UPPER_CASE
+#
+# Scope: src/rcllite and src/ffi (tests/, examples/, generated msg headers and
+# vendored CycloneDDS stay out).  This repo has no compile database; run it
+# from the stellaporta workspace, which sees this repo as external/rcllite+
+# (its compile_commands.json covers the library TUs — build
+# @rcllite//src/ffi:rcllite_ffi there to get the FFI entry too):
+#
+#   clang-tidy -p . $(find external/rcllite+/src/rcllite -name '*.cpp')
+#   # keep first-party diagnostics: grep for 'src/rcllite/' (the source form)
+#   # or '_virtual_includes[/\\][A-Za-z0-9_]*[/\\]rcllite[/\\]' (header form)
+#
+# modernize-* and the readability-* refactor opinions are not enabled (only
+# readability-identifier-naming): the library predates them and adopting them
+# today is a ~700-hint cleanup, tracked separately.  The exceptions that
+# remain are deliberate:
+#   - the QoS preset factories keep their rmw_qos_profile_* names: public API
+#     validated by the ROS 2 interop matrix;
+#   - swappable/narrowing match stellaporta's baseline: (host, port) packs and
+#     explicit wire casts.
+---
+Checks: >
+  -*,
+  bugprone-*,
+  clang-analyzer-*,
+  performance-*,
+  portability-*,
+  readability-identifier-naming,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+
+CheckOptions:
+  - key: readability-identifier-naming.FunctionCase
+    value: lower_case
+  # Public API frozen by the ROS 2 interop matrix.
+  - key: readability-identifier-naming.FunctionIgnoredRegexp
+    value: '(Default|SensorData|Parameters|ParameterEvents|Services)$'
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.UnionCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumConstantCase
+    value: CamelCase
+  - key: readability-identifier-naming.TypeAliasCase
+    value: CamelCase
+  - key: readability-identifier-naming.TypedefCase
+    value: CamelCase
+  - key: readability-identifier-naming.MemberCase
+    value: lower_case
+  - key: readability-identifier-naming.MemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.PublicMemberCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.ProtectedMemberCase
+    value: lower_case
+  - key: readability-identifier-naming.ProtectedMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.LocalVariableCase
+    value: lower_case
+  - key: readability-identifier-naming.LocalConstantCase
+    value: lower_case
+  - key: readability-identifier-naming.ParameterCase
+    value: lower_case
+  - key: readability-identifier-naming.VariableCase
+    value: lower_case
+  - key: readability-identifier-naming.GlobalVariableCase
+    value: lower_case
+  - key: readability-identifier-naming.GlobalVariablePrefix
+    value: g_
+  - key: readability-identifier-naming.GlobalConstantCase
+    value: lower_case
+  - key: readability-identifier-naming.StaticVariableCase
+    value: lower_case
+  - key: readability-identifier-naming.ConstexprVariableCase
+    value: CamelCase
+  - key: readability-identifier-naming.ConstexprVariablePrefix
+    value: k
+  - key: readability-identifier-naming.NamespaceCase
+    value: lower_case
+  - key: readability-identifier-naming.TemplateParameterCase
+    value: CamelCase
+  - key: readability-identifier-naming.MacroDefinitionCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.MacroDefinitionIgnoredRegexp
+    value: 'RCLLITE_.*_(HPP|H)_$'
+
+HeaderFilterRegex: '([/\\]src[/\\]rcllite[/\\]|_virtual_includes[/\\][A-Za-z0-9_]+[/\\]rcllite[/\\])'
+
+WarningsAsErrors: '*'
+...

@@ -7,8 +7,8 @@
 //     (describe_parameters, get_parameter_types, get_parameters,
 //      list_parameters, set_parameters, set_parameters_atomically)
 //   * /parameter_events (transient local) so ros2 param CLI sees changes
-#ifndef RCLLITE__PARAMETER_HPP_
-#define RCLLITE__PARAMETER_HPP_
+#ifndef RCLLITE_PARAMETER_HPP_
+#define RCLLITE_PARAMETER_HPP_
 
 #include <cstdint>
 #include <memory>
@@ -133,4 +133,4 @@ class ParameterCore {
 
 }  // namespace rcl
 
-#endif  // RCLLITE__PARAMETER_HPP_
+#endif  // RCLLITE_PARAMETER_HPP_

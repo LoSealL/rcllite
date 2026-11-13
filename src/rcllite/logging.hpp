@@ -4,8 +4,8 @@
 // Logging facade over the vila logger: everything rcllite logs goes through
 // the process-wide "rcllite" logger nested under the vila root logger, so
 // applications control verbosity uniformly via vila::Logger::SetLoggerLevel.
-#ifndef RCLLITE__LOGGING_HPP_
-#define RCLLITE__LOGGING_HPP_
+#ifndef RCLLITE_LOGGING_HPP_
+#define RCLLITE_LOGGING_HPP_
 
 #include "vila/logging/logger.h"
 
@@ -25,4 +25,4 @@ inline vila::Logger* logger() {
 #define RCLLITE_LOGW(...) ::rcl::logger()->Warning(__VA_ARGS__)
 #define RCLLITE_LOGE(...) ::rcl::logger()->Error(__VA_ARGS__)
 
-#endif  // RCLLITE__LOGGING_HPP_
+#endif  // RCLLITE_LOGGING_HPP_

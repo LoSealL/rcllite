@@ -3,8 +3,8 @@
 //
 // Template factory method definitions for Node; included by rcllite.hpp
 // after all entity headers (same pattern rclcpp uses).
-#ifndef RCLLITE__NODE_IMPL_HPP_
-#define RCLLITE__NODE_IMPL_HPP_
+#ifndef RCLLITE_NODE_IMPL_HPP_
+#define RCLLITE_NODE_IMPL_HPP_
 
 #include <memory>
 #include <string>
@@ -60,4 +60,4 @@ std::shared_ptr<Client<ServiceT>> Node::create_client(const std::string& service
 
 }  // namespace rcl
 
-#endif  // RCLLITE__NODE_IMPL_HPP_
+#endif  // RCLLITE_NODE_IMPL_HPP_

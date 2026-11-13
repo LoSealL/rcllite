@@ -14,8 +14,8 @@
 // deserialize members).  Service types provide nested `Request` / `Response`
 // structs; each of those gets its own MessageType<> specialization (their DDS
 // names are "pkg::srv::dds_::Name_Request_" / "..._Response_").
-#ifndef RCLLITE__MSG_TRAITS_HPP_
-#define RCLLITE__MSG_TRAITS_HPP_
+#ifndef RCLLITE_MSG_TRAITS_HPP_
+#define RCLLITE_MSG_TRAITS_HPP_
 
 #include <cstdint>
 #include <string>
@@ -79,4 +79,4 @@ inline bool read_string_sequence(CdrReader& r, std::vector<std::string>& v) {
 
 }  // namespace rcl
 
-#endif  // RCLLITE__MSG_TRAITS_HPP_
+#endif  // RCLLITE_MSG_TRAITS_HPP_

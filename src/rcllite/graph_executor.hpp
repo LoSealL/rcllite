@@ -1,7 +1,7 @@
 // Copyright 2026 rcllite contributors
 // Licensed under the Apache License, Version 2.0
-#ifndef RCLLITE__GRAPH_EXECUTOR_HPP_
-#define RCLLITE__GRAPH_EXECUTOR_HPP_
+#ifndef RCLLITE_GRAPH_EXECUTOR_HPP_
+#define RCLLITE_GRAPH_EXECUTOR_HPP_
 
 #include <chrono>
 #include <memory>
@@ -45,7 +45,10 @@ namespace rcl {
 ///                                          // once on start
 ///           "qos": {"reliability": "reliable"|"best_effort",
 ///                   "durability": "volatile"|"transient_local",
-///                   "depth": 10}           // all optional
+///                   "depth": 10},          // all optional
+///           "wait": "forever"|0.5          // optional; block while the
+///                                          // keep-last window is unacked
+///                                          // (seconds, or forever)
 ///         }
 ///       ],
 ///       "subscriptions": [                 // optional
@@ -94,4 +97,4 @@ class GraphExecutor {
 
 }  // namespace rcl
 
-#endif  // RCLLITE__GRAPH_EXECUTOR_HPP_
+#endif  // RCLLITE_GRAPH_EXECUTOR_HPP_

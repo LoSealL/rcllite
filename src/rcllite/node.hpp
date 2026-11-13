@@ -1,7 +1,7 @@
 // Copyright 2026 rcllite contributors
 // Licensed under the Apache License, Version 2.0
-#ifndef RCLLITE__NODE_HPP_
-#define RCLLITE__NODE_HPP_
+#ifndef RCLLITE_NODE_HPP_
+#define RCLLITE_NODE_HPP_
 
 #include <cstdint>
 #include <memory>
@@ -40,7 +40,7 @@ class EntityBase {
 class Node : public std::enable_shared_from_this<Node> {
  public:
   explicit Node(const std::string& name);
-  Node(const std::string& name, const std::string& namespace_);
+  Node(const std::string& name, const std::string& ns);
   ~Node();
 
   Node(const Node&) = delete;
@@ -135,4 +135,4 @@ class Node : public std::enable_shared_from_this<Node> {
 
 }  // namespace rcl
 
-#endif  // RCLLITE__NODE_HPP_
+#endif  // RCLLITE_NODE_HPP_

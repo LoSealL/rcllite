@@ -2,8 +2,8 @@
 // Licensed under the Apache License, Version 2.0
 //
 // Template parameter conveniences on Node; included via rcllite.hpp.
-#ifndef RCLLITE__NODE_PARAMS_HPP_
-#define RCLLITE__NODE_PARAMS_HPP_
+#ifndef RCLLITE_NODE_PARAMS_HPP_
+#define RCLLITE_NODE_PARAMS_HPP_
 
 #include <string>
 #include <utility>
@@ -53,4 +53,4 @@ inline bool Node::set_parameter(const std::string& name,
 
 }  // namespace rcl
 
-#endif  // RCLLITE__NODE_PARAMS_HPP_
+#endif  // RCLLITE_NODE_PARAMS_HPP_

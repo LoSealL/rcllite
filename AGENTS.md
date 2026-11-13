@@ -98,6 +98,8 @@ bazelisk test //tests/...      # 单元测试必须通过（mock ddsc，无网�
   + `ruff format --check`（preview 开启、行宽 88）、`pyright`、`pylint`
   （须全绿）；C++ 胶水（`src/ffi/rcllite_ffi.cpp`）改动后必须
   `bazelisk build //src/ffi:rcllite_ffi` 重建，否则 Python 侧仍是旧符号。
+- C++ 静态检查：仓库根 `.clang-tidy`（命名规则 + analyzer/bugprone/
+  performance/portability）；本仓库无 compile db，运行方式见文件头注释。
 - 改序列化/图通告相关代码时，注意上一节的线协议约定，保持逐字节兼容。
 
 ### 代码格式

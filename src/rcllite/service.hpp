@@ -13,8 +13,8 @@
 // services of different rmw implementations cannot talk to each other; by
 // mirroring rmw_cyclonedds byte-for-byte we interoperate with every node
 // running RMW_IMPLEMENTATION=rmw_cyclonedds_cpp.)
-#ifndef RCLLITE__SERVICE_HPP_
-#define RCLLITE__SERVICE_HPP_
+#ifndef RCLLITE_SERVICE_HPP_
+#define RCLLITE_SERVICE_HPP_
 
 #include <atomic>
 #include <chrono>
@@ -117,7 +117,7 @@ class Client : public EntityBase {
   explicit Client(dds::Participant& ppant, const std::string& ros_service,
                   const QoS& qos)
       : ros_service_(ros_service),
-        client_id_((static_cast<uint64_t>(std::random_device{}()) << 32) |
+        client_id_((static_cast<uint64_t>(std::random_device{}()) << 32U) |
                    static_cast<uint64_t>(std::random_device{}())) {
     request_writer_ = std::make_unique<dds::Writer>(
         ppant.handle(), ppant.publisher(), ros_to_dds_request_topic_name(ros_service),
@@ -231,7 +231,8 @@ class Client : public EntityBase {
     CdrWriter w;
     write_service_header(w, ServiceHeader{client_id_, seq});
     Request::serialize(request, w);
-    if (!request_writer_->write(w.payload().data(), w.payload().size())) {
+    if (request_writer_->write(w.payload().data(), w.payload().size()) !=
+        dds::WriteStatus::Ok) {
       std::lock_guard<std::mutex> lock(pending_mtx_);
       pending_.erase(seq);
       throw Error(vila::InternalError("failed to send request on {}", ros_service_));
@@ -251,4 +252,4 @@ class Client : public EntityBase {
 
 }  // namespace rcl
 
-#endif  // RCLLITE__SERVICE_HPP_
+#endif  // RCLLITE_SERVICE_HPP_

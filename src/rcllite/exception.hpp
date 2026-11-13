@@ -1,7 +1,7 @@
 // Copyright 2026 rcllite contributors
 // Licensed under the Apache License, Version 2.0
-#ifndef RCLLITE__EXCEPTION_HPP_
-#define RCLLITE__EXCEPTION_HPP_
+#ifndef RCLLITE_EXCEPTION_HPP_
+#define RCLLITE_EXCEPTION_HPP_
 
 #include <stdexcept>
 #include <utility>
@@ -26,4 +26,4 @@ class Error : public std::runtime_error {
 
 }  // namespace rcl
 
-#endif  // RCLLITE__EXCEPTION_HPP_
+#endif  // RCLLITE_EXCEPTION_HPP_

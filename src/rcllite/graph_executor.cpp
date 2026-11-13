@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -46,7 +47,8 @@ std::vector<uint8_t> payload_from_hex(const std::string& hex, const std::string&
     if (hi < 0 || lo < 0) {
       throw Error(vila::InvalidArguments("{}: invalid hex digit", what));
     }
-    bytes.push_back(static_cast<uint8_t>((hi << 4) | lo));
+    bytes.push_back(static_cast<uint8_t>((static_cast<unsigned>(hi) << 4U) |
+                                         static_cast<unsigned>(lo)));
   }
   return bytes;
 }
@@ -105,7 +107,7 @@ struct GraphExecutor::Impl {
 
   struct NodeEntry {
     std::string fq_name;
-    std::string namespace_;
+    std::string ns;
     std::shared_ptr<Node> node;
     std::vector<std::shared_ptr<RawPublisher>> publishers;
     std::vector<std::shared_ptr<RawSubscription>> subscriptions;
@@ -145,21 +147,21 @@ struct GraphExecutor::Impl {
       throw Error(vila::InvalidArguments("every node needs a 'name'"));
     }
     NodeEntry entry;
-    entry.namespace_ = spec.value("namespace", "/");
+    entry.ns = spec.value("namespace", "/");
     const std::string name = spec.at("name").get<std::string>();
     // "class" opts into a registered behavior-carrying subclass; without it
     // the node is a plain skeleton driven purely by the config below.
     if (spec.contains("class")) {
       const std::string cls = spec.at("class").get<std::string>();
-      entry.node = NodeRegistry::CreateByName(cls, name, entry.namespace_);
+      entry.node = NodeRegistry::CreateByName(cls, name, entry.ns);
       if (!entry.node) {
         throw Error(vila::InvalidArguments(
             "node {}/{}: class '{}' is not registered; link its library "
             "(alwayslink = 1) into the hosting binary",
-            entry.namespace_, name, cls));
+            entry.ns, name, cls));
       }
     } else {
-      entry.node = std::make_shared<Node>(name, entry.namespace_);
+      entry.node = std::make_shared<Node>(name, entry.ns);
     }
     entry.fq_name = entry.node->get_fully_qualified_name();
     executor.add_node(entry.node);
@@ -212,17 +214,29 @@ struct GraphExecutor::Impl {
     auto pub = std::make_shared<RawPublisher>();
     pub->type = dds_type_name(spec.at("type").get<std::string>());
     const std::string ros_topic =
-        expand_topic_name(spec.at("topic").get<std::string>(), entry.namespace_);
+        expand_topic_name(spec.at("topic").get<std::string>(), entry.ns);
     pub->topic = ros_topic;
     pub->payload =
         spec.contains("payload_hex")
             ? payload_from_hex(spec.at("payload_hex").get<std::string>(), what)
             : default_payload();
     pub->rate_hz = spec.value("rate_hz", 0.0);
+    QoS qos = parse_qos(spec.value("qos", Json::object()), QoS::Default());
+    if (spec.contains("wait")) {
+      const Json& wait = spec.at("wait");
+      if (wait.is_string() && wait.get<std::string>() == "forever") {
+        qos.wait_forever();
+      } else if (wait.is_number()) {
+        qos.wait_for(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::duration<double>(wait.get<double>())));
+      } else {
+        throw Error(
+            vila::InvalidArguments("{}: 'wait' must be \"forever\" or seconds", what));
+      }
+    }
     pub->writer = std::make_unique<dds::Writer>(
         entry.node->participant().handle(), entry.node->participant().publisher(),
-        ros_to_dds_topic_name(ros_topic), pub->type,
-        parse_qos(spec.value("qos", Json::object()), QoS::Default()));
+        ros_to_dds_topic_name(ros_topic), pub->type, qos);
     entry.publishers.push_back(std::move(pub));
   }
 
@@ -234,7 +248,7 @@ struct GraphExecutor::Impl {
     auto sub = std::make_shared<RawSubscription>();
     sub->type = dds_type_name(spec.at("type").get<std::string>());
     const std::string ros_topic =
-        expand_topic_name(spec.at("topic").get<std::string>(), entry.namespace_);
+        expand_topic_name(spec.at("topic").get<std::string>(), entry.ns);
     sub->topic = ros_topic;
     sub->reader = std::make_unique<dds::Reader>(
         entry.node->participant().handle(), entry.node->participant().subscriber(),
@@ -253,7 +267,8 @@ struct GraphExecutor::Impl {
             const auto period = std::chrono::duration<double>(1.0 / pub->rate_hz);
             auto deadline = std::chrono::steady_clock::now();
             while (running.load()) {
-              if (pub->writer->write(pub->payload.data(), pub->payload.size())) {
+              if (pub->writer->write(pub->payload.data(), pub->payload.size()) ==
+                  dds::WriteStatus::Ok) {
                 pub->published.fetch_add(1);
               }
               deadline +=
@@ -263,7 +278,8 @@ struct GraphExecutor::Impl {
             }
           });
         } else {
-          if (pub->writer->write(pub->payload.data(), pub->payload.size())) {
+          if (pub->writer->write(pub->payload.data(), pub->payload.size()) ==
+              dds::WriteStatus::Ok) {
             pub->published.fetch_add(1);
           }
         }
@@ -321,7 +337,7 @@ std::string GraphExecutor::status_json() const {
       out += "\"topic\":" + json_escape_string(pub->topic);
       out += ",\"type\":" + json_escape_string(pub->type);
       out += ",\"published\":" + std::to_string(pub->published.load());
-      out += "}";
+      out += '}';
       first = false;
     }
     out += "],\"subscriptions\":[";
@@ -331,7 +347,7 @@ std::string GraphExecutor::status_json() const {
       out += "\"topic\":" + json_escape_string(sub->topic);
       out += ",\"type\":" + json_escape_string(sub->type);
       out += ",\"received\":" + std::to_string(sub->received.load());
-      out += "}";
+      out += '}';
       first = false;
     }
     out += "]}";

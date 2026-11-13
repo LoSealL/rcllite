@@ -11,6 +11,7 @@
 
 #include "rcllite/dds/raw_serdata.hpp"
 #include "rcllite/exception.hpp"
+#include "rcllite/logging.hpp"
 
 namespace rcl {
 namespace dds {
@@ -158,6 +159,12 @@ dds_qos_t* make_dds_qos(const QoS& qos) {
                              ? DDS_DURABILITY_TRANSIENT_LOCAL
                              : DDS_DURABILITY_VOLATILE);
   dds_qset_deadline(q, inf);
+  if (qos.max_samples > 0) {
+    // Bounded reader history: once full the reader rejects (does not ack)
+    // new samples, so a reliable writer retransmits and its wait stalls.
+    dds_qset_resource_limits(q, static_cast<int32_t>(qos.max_samples),
+                             DDS_LENGTH_UNLIMITED, DDS_LENGTH_UNLIMITED);
+  }
   return q;
 }
 
@@ -173,13 +180,13 @@ Participant::Participant(uint32_t domain_id, const std::string& enclave) {
   const std::string& extra = Context::instance().config_xml();
   if (!extra.empty()) {
     if (!cfg.empty()) {
-      cfg += ",";
+      cfg += ',';
     }
     cfg += extra;
   }
   if (const char* env = std::getenv("CYCLONEDDS_URI")) {
     if (!cfg.empty()) {
-      cfg += ",";
+      cfg += ',';
     }
     cfg += env;
   }
@@ -213,7 +220,23 @@ Participant::~Participant() {
 }
 
 Writer::Writer(dds_entity_t participant, dds_entity_t dds_publisher,
-               const std::string& topic, const std::string& type_name, const QoS& qos) {
+               const std::string& topic, const std::string& type_name, const QoS& qos)
+    : topic_(topic) {
+  if (qos.max_samples > 0) {
+    throw Error(vila::InvalidArguments(
+        "max_samples/refuse_when_full is reader-only (topic {})", topic));
+  }
+  if (qos.wait != QoS::Wait::None) {
+    // Acks need a reliable keep-last writer; anything else cannot wait.
+    if (qos.reliability != QoS::Reliability::Reliable ||
+        qos.history != QoS::History::KeepLast || qos.depth == 0) {
+      throw Error(vila::InvalidArguments(
+          "wait needs a reliable keep-last writer with depth > 0 (topic {})", topic));
+    }
+    wait_ = qos.wait;
+    wait_timeout_ = qos.wait_timeout;
+    depth_ = qos.depth;
+  }
   sertype_ = create_raw_sertype(type_name.c_str());
   if (sertype_ == nullptr) {
     throw Error(vila::InternalError("failed to create sertype for {}", type_name));
@@ -238,17 +261,51 @@ Writer::~Writer() {
   }
 }
 
-bool Writer::write(const uint8_t* payload, size_t size) {
+WriteStatus Writer::write(const uint8_t* payload, size_t size) {
+  // Flow control: a full window blocks until acked; the lock keeps it exact.
+  std::unique_lock<std::mutex> lock(wait_mtx_, std::defer_lock);
+  if (wait_ != QoS::Wait::None) {
+    lock.lock();
+    if (pending_ >= depth_) {
+      const dds_duration_t timeout =
+          wait_ == QoS::Wait::Forever
+              ? DDS_INFINITY
+              : static_cast<dds_duration_t>(wait_timeout_.count());
+      const dds_return_t rc = dds_wait_for_acks(wr_, timeout);
+      if (rc == DDS_RETCODE_TIMEOUT) {
+        if (!warned_timeout_) {
+          warned_timeout_ = true;
+          RCLLITE_LOGW(
+              "{}: wait timed out after {} ms; sample not written (downstream "
+              "stalled?)",
+              topic_, std::chrono::duration<double, std::milli>(wait_timeout_).count());
+        }
+        return WriteStatus::TimedOut;
+      }
+      if (rc < 0) {
+        return WriteStatus::Failed;
+      }
+      warned_timeout_ = false;
+      pending_ = 0;
+    }
+  }
+
   struct ddsi_serdata* d = raw_serdata_from_blob(sertype_, payload, size);
   if (d == nullptr) {
-    return false;
+    return WriteStatus::Failed;
   }
   // Ownership contract: dds_writecdr consumes one reference on all paths
   // through the write implementation (see dds_writecdr_impl_common in
   // CycloneDDS); the early validation failures it can return without
   // consuming cannot occur for our writers (valid handle, no content
   // filters).  Do NOT unref on failure — that would double-free.
-  return dds_writecdr(wr_, d) == DDS_RETCODE_OK;
+  if (dds_writecdr(wr_, d) != DDS_RETCODE_OK) {
+    return WriteStatus::Failed;
+  }
+  if (wait_ != QoS::Wait::None) {
+    ++pending_;
+  }
+  return WriteStatus::Ok;
 }
 
 size_t Writer::reader_count() const {

@@ -1,7 +1,7 @@
 // Copyright 2026 rcllite contributors
 // Licensed under the Apache License, Version 2.0
-#ifndef RCLLITE__GRAPH_HPP_
-#define RCLLITE__GRAPH_HPP_
+#ifndef RCLLITE_GRAPH_HPP_
+#define RCLLITE_GRAPH_HPP_
 
 #include <memory>
 #include <string>
@@ -53,4 +53,4 @@ class GraphMonitor {
 
 }  // namespace rcl
 
-#endif  // RCLLITE__GRAPH_HPP_
+#endif  // RCLLITE_GRAPH_HPP_

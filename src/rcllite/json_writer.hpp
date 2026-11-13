@@ -3,8 +3,8 @@
 //
 // Tiny shared helpers for hand-building JSON documents (snapshot and status
 // output).  Deliberately no JSON dependency on the write side.
-#ifndef RCLLITE__JSON_WRITER_HPP_
-#define RCLLITE__JSON_WRITER_HPP_
+#ifndef RCLLITE_JSON_WRITER_HPP_
+#define RCLLITE_JSON_WRITER_HPP_
 
 #include <string>
 
@@ -41,8 +41,8 @@ inline std::string json_escape_string(const std::string& s) {
       default:
         if (uc < 0x20) {
           out += "\\u00";
-          out += hex[uc >> 4];
-          out += hex[uc & 0xf];
+          out += hex[static_cast<unsigned>(uc) >> 4U];
+          out += hex[static_cast<unsigned>(uc) & 0xfU];
         } else {
           out += c;
         }
@@ -54,4 +54,4 @@ inline std::string json_escape_string(const std::string& s) {
 
 }  // namespace rcl
 
-#endif  // RCLLITE__JSON_WRITER_HPP_
+#endif  // RCLLITE_JSON_WRITER_HPP_

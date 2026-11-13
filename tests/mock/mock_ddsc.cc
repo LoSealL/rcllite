@@ -14,6 +14,8 @@
 #include "mock/mock_ddsc.h"
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdlib>
 #include <cstring>
 #include <map>
@@ -39,6 +41,7 @@ struct QosState {
   int32_t depth = 10;
   dds_reliability_kind_t reliability = DDS_RELIABILITY_RELIABLE;
   dds_durability_kind_t durability = DDS_DURABILITY_VOLATILE;
+  int32_t max_samples = DDS_LENGTH_UNLIMITED;
 };
 
 struct ReaderState {
@@ -52,6 +55,7 @@ struct ReaderState {
 struct WriterState {
   std::vector<std::vector<uint8_t>> written;
   int32_t matched = 0;
+  size_t unacked = 0;  // samples awaiting dds_wait_for_acks
   QosView qos{};
 };
 
@@ -64,6 +68,7 @@ struct WaitsetState {
 };
 
 std::mutex mtx;
+std::condition_variable acks_cv;  // ack_all() releases dds_wait_for_acks
 // dds_qos_t stays opaque (the ddsi headers define the real struct); the mock
 // keeps the QoS values set through the q setters in a pointer-keyed map.
 std::map<const dds_qos_t*, QosState> qos_state;
@@ -81,7 +86,7 @@ dds_entity_t last_readcond_h = 0;
 dds_entity_t alloc_handle() { return next_handle++; }
 
 QosView snapshot(const QosState& s) {
-  return QosView{s.history, s.depth, s.reliability, s.durability};
+  return QosView{s.history, s.depth, s.reliability, s.durability, s.max_samples};
 }
 
 // Reader owning a read-condition (conditions are created per reader).
@@ -144,6 +149,14 @@ void set_matched_readers(dds_entity_t writer, int32_t count) {
   internal::writers[writer].matched = count;
 }
 
+void ack_all(dds_entity_t writer) {
+  {
+    std::lock_guard<std::mutex> lock(internal::mtx);
+    internal::writers[writer].unacked = 0;
+  }
+  internal::acks_cv.notify_all();
+}
+
 const QosView* writer_qos(dds_entity_t writer) {
   auto it = internal::writers.find(writer);
   return it == internal::writers.end() ? nullptr : &it->second.qos;
@@ -196,6 +209,14 @@ void dds_qset_reliability(dds_qos_t* __restrict qos, dds_reliability_kind_t kind
 void dds_qset_durability(dds_qos_t* __restrict qos, dds_durability_kind_t kind) {
   std::lock_guard<std::mutex> lock(mock_dds::internal::mtx);
   mock_dds::internal::qos_state[qos_key(qos)].durability = kind;
+}
+
+void dds_qset_resource_limits(dds_qos_t* __restrict qos, int32_t max_samples,
+                              int32_t max_instances, int32_t max_samples_per_instance) {
+  (void)max_instances;
+  (void)max_samples_per_instance;
+  std::lock_guard<std::mutex> lock(mock_dds::internal::mtx);
+  mock_dds::internal::qos_state[qos_key(qos)].max_samples = max_samples;
 }
 
 void dds_qset_deadline(dds_qos_t* __restrict qos, dds_duration_t period) {
@@ -387,10 +408,35 @@ dds_return_t dds_writecdr(dds_entity_t writer, struct ddsi_serdata* serdata) {
     if (rc == DDS_RETCODE_OK) {
       const auto* d = reinterpret_cast<const mock_dds::internal::MockSerdata*>(serdata);
       mock_dds::internal::writers[writer].written.push_back(d->payload);
+      ++mock_dds::internal::writers[writer].unacked;
     }
   }
   ddsi_serdata_unref(serdata);  // consumes one reference on every path
   return rc;
+}
+
+// Mirrors ddsi_writer_wait_for_acks: returns once everything written so far
+// is acked, DDS_RETCODE_TIMEOUT when the deadline passes first (DDS_INFINITY
+// waits forever).  ack_all() is the test-side ack source.
+dds_return_t dds_wait_for_acks(dds_entity_t writer, dds_duration_t timeout) {
+  std::unique_lock<std::mutex> lock(mock_dds::internal::mtx);
+  auto it = mock_dds::internal::writers.find(writer);
+  if (it == mock_dds::internal::writers.end()) {
+    return DDS_RETCODE_BAD_PARAMETER;
+  }
+  auto acked = [&it] { return it->second.unacked == 0; };
+  if (acked()) {
+    return DDS_RETCODE_OK;
+  }
+  if (timeout == DDS_INFINITY) {
+    mock_dds::internal::acks_cv.wait(lock, acked);
+    return DDS_RETCODE_OK;
+  }
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::nanoseconds(timeout);
+  return mock_dds::internal::acks_cv.wait_until(lock, deadline, acked)
+             ? DDS_RETCODE_OK
+             : DDS_RETCODE_TIMEOUT;
 }
 
 dds_return_t dds_takecdr(dds_entity_t reader, struct ddsi_serdata** buf, uint32_t maxs,

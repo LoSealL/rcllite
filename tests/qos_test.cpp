@@ -71,4 +71,21 @@ TEST_F(QosTest, SubscriptionQoSTranslates) {
   EXPECT_EQ(q->depth, 10);
 }
 
+TEST_F(QosTest, RefuseWhenFullTranslatesToKeepAllWithLimit) {
+  auto node = std::make_shared<rcl::Node>("n");
+  node->create_subscription<Parameter>(
+      "t", [](const Parameter&) {}, rcl::QoS().refuse_when_full(3));
+  const auto* q = mock_dds::reader_qos(mock_dds::last_reader());
+  ASSERT_NE(q, nullptr);
+  EXPECT_EQ(q->history, DDS_HISTORY_KEEP_ALL);
+  EXPECT_EQ(q->max_samples, 3);
+}
+
+TEST_F(QosTest, RefuseWhenFullIsReaderOnly) {
+  auto node = std::make_shared<rcl::Node>("n");
+  EXPECT_THROW(
+      (void)node->create_publisher<Parameter>("t", rcl::QoS().refuse_when_full(1)),
+      rcl::Error);
+}
+
 }  // namespace

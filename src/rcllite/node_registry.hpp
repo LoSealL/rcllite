@@ -35,8 +35,8 @@
 // The registry is compile-time only by design: classes must be linked into
 // the hosting binary; there is no dlopen/plugin loading (nodes not linked
 // in run as separate processes and interop over the wire).
-#ifndef RCLLITE__NODE_REGISTRY_HPP_
-#define RCLLITE__NODE_REGISTRY_HPP_
+#ifndef RCLLITE_NODE_REGISTRY_HPP_
+#define RCLLITE_NODE_REGISTRY_HPP_
 
 #include <functional>
 #include <memory>
@@ -69,4 +69,4 @@ using NodeRegistry =
         return ::std::make_shared<Cls>(rcllite_reg_name, rcllite_reg_ns);           \
       })
 
-#endif  // RCLLITE__NODE_REGISTRY_HPP_
+#endif  // RCLLITE_NODE_REGISTRY_HPP_
