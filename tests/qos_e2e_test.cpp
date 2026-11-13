@@ -163,13 +163,16 @@ TEST(QosE2E, BoundedReaderPacesLosslessStream) {
   }
   const auto elapsed = std::chrono::steady_clock::now() - start;
 
-  // Give the tail frames time to drain, then compare the full sequence.
-  for (int i = 0; i < 100; ++i) {
-    std::lock_guard<std::mutex> lock(gotMtx);
-    if (got.size() == static_cast<size_t>(kFrames)) {
-      break;
+  // Give the tail frames time to drain; the publisher may lead by the bounded
+  // in-flight buffer (reader box + writer window), never by the whole stream.
+  for (int i = 0; i < 500; ++i) {
+    {
+      std::lock_guard<std::mutex> lock(gotMtx);
+      if (got.size() == static_cast<size_t>(kFrames)) {
+        break;
+      }
     }
-    std::this_thread::sleep_for(20ms);
+    std::this_thread::sleep_for(10ms);
   }
   exec.cancel();
   spinner.join();
@@ -179,11 +182,15 @@ TEST(QosE2E, BoundedReaderPacesLosslessStream) {
     want.push_back("f" + std::to_string(i));
   }
   std::lock_guard<std::mutex> lock(gotMtx);
-  EXPECT_EQ(got, want) << "stream lost or reordered samples";
+  ASSERT_EQ(got.size(), want.size()) << "stream lost samples";
+  EXPECT_EQ(got, want) << "stream reordered samples";
   using secs = std::chrono::duration<double>;
-  // Consumer pace kFrames*20ms; without the park the burst finishes in ms.
-  EXPECT_GE(secs(elapsed).count(), kFrames * 0.02 * 0.9);
-  EXPECT_LT(secs(elapsed).count(), kFrames * 0.02 + 5.0) << "publish stalled beyond the consumer pace";
+  // Consumer pace kFrames*20ms; the bounded in-flight buffer lets the writer
+  // lead by a few frames, no more.
+  constexpr int kMaxLead = 8;
+  EXPECT_GE(secs(elapsed).count(), (kFrames - kMaxLead) * 0.02);
+  EXPECT_LT(secs(elapsed).count(), kFrames * 0.02 + 5.0)
+      << "publish stalled beyond the consumer pace";
 }
 
 }  // namespace
