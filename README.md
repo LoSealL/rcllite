@@ -164,14 +164,17 @@ int main()
   pub->wait_for_subscribers();                           // block until the first subscriber matches
   bool sent = pub->publish(msg, std::chrono::seconds(1)); // backpressure: false = timed out, nothing written
 
-  // Flow control between topics: with a QoS wait policy a publisher stops
-  // instead of overwriting its keep-last window.  Once `depth` samples are
-  // unacknowledged it blocks until the matched readers ack (or the timeout
-  // expires — false = the sample was not written):
+  // Flow control between topics: the publisher stops instead of overwriting its
+  // keep-last window, paired with a reader that refuses new samples once its
+  // own bound is full.  Use a deadline, never wait_forever: a dead consumer
+  // would park the publisher for good.
   auto frames =
     node->create_publisher<rcl_interfaces::msg::Parameter>(
-      "frames", rcl::QoS().keep_last(4).wait_forever());   // or .wait_for(2s)
-  frames->publish(msg);
+      "frames", rcl::QoS().keep_last(4).wait_for(std::chrono::seconds(30)));
+  node->create_subscription<rcl_interfaces::msg::Parameter>(
+    "frames", [](const auto & m) { /* ... */ },
+    rcl::QoS().refuse_when_full(4));  // continuous streams only
+  if (!frames->publish(msg)) { /* 30 s without an ack: dropped, keep going */ }
 
   node->create_subscription<rcl_interfaces::msg::Parameter>(
     "echo", [](const rcl_interfaces::msg::Parameter & m) { /* ... */ });
@@ -241,7 +244,9 @@ default values). `wstring` is not supported yet.
   `wait_for_subscribers`, a QoS wait policy) additionally stall the calling
   thread.  The ack wait is transport-level: a reader that receives and
   enqueues a sample acks it, so a downstream node that moves work into its own
-  bounded queue is paced only by network/reader stalls, not by that queue.
+  bounded queue is paced only by network/reader stalls, not by that queue —
+  unless the reader itself is bounded with `refuse_when_full()`, which withholds
+  the ack once its box is full and is what the paired wait keys on.
 - Callbacks (subscriptions, services, parameter services) are dispatched on
   the `Executor::spin` thread; within a single executor callbacks are
   naturally serialized — no locking needed.
@@ -255,6 +260,13 @@ match `rmw_qos_profile_default/sensor_data/parameters/parameter_events/services`
 `wait_forever()` / `wait_for()` add publisher flow control: when the keep-last
 window is full the write blocks until the readers acknowledge (reliable +
 keep-last only; it is a local policy, not a DDS wire property).
+`refuse_when_full(n)` is the reader-side half: keep-all + resource limits, so
+the reader holds at most n samples and rejects the rest instead of overwriting.
+Readers only; continuous streams only (one-shot notifications — done,
+calibration, model paths — must stay keep-last so late joiners still see them),
+and always paired with `wait_for()`: a stalled consumer parks the publisher
+until the deadline, and because the link is TCP it holds up every other topic
+on that connection, not just this one.
 deadline, lifespan and liveliness are not implemented.
 
 ## Directory layout

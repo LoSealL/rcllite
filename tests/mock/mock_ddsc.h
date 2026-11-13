@@ -60,6 +60,7 @@ struct QosView {
   int32_t depth;
   dds_reliability_kind_t reliability;
   dds_durability_kind_t durability;
+  int32_t max_samples;
 };
 
 const QosView* writer_qos(dds_entity_t writer);

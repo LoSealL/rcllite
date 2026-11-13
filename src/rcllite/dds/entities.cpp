@@ -159,6 +159,12 @@ dds_qos_t* make_dds_qos(const QoS& qos) {
                              ? DDS_DURABILITY_TRANSIENT_LOCAL
                              : DDS_DURABILITY_VOLATILE);
   dds_qset_deadline(q, inf);
+  if (qos.max_samples > 0) {
+    // Bounded reader history: once full the reader rejects (does not ack)
+    // new samples, so a reliable writer retransmits and its wait stalls.
+    dds_qset_resource_limits(q, static_cast<int32_t>(qos.max_samples),
+                             DDS_LENGTH_UNLIMITED, DDS_LENGTH_UNLIMITED);
+  }
   return q;
 }
 
@@ -216,6 +222,10 @@ Participant::~Participant() {
 Writer::Writer(dds_entity_t participant, dds_entity_t dds_publisher,
                const std::string& topic, const std::string& type_name, const QoS& qos)
     : topic_(topic) {
+  if (qos.max_samples > 0) {
+    throw Error(vila::InvalidArguments(
+        "max_samples/refuse_when_full is reader-only (topic {})", topic));
+  }
   if (qos.wait != QoS::Wait::None) {
     // Acks need a reliable keep-last writer; anything else cannot wait.
     if (qos.reliability != QoS::Reliability::Reliable ||

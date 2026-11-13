@@ -24,6 +24,10 @@ struct QoS {
   Durability durability = Durability::Volatile;
   History history = History::KeepLast;
   size_t depth = 10;
+  /// Reader-side cap (0 = unlimited): with a cap the reader runs keep-all +
+  /// resource limits and rejects samples once full.  A reliable publisher's
+  /// ack wait then stalls instead of the reader silently overwriting.
+  size_t max_samples = 0;
   Wait wait = Wait::None;
   std::chrono::nanoseconds wait_timeout{0};
 
@@ -38,6 +42,19 @@ struct QoS {
   QoS& keep_last(size_t d) {
     history = History::KeepLast;
     depth = d;
+    return *this;
+  }
+  /// Reader-side bounded box: keep at most `n` samples and refuse new ones
+  /// once full, so a paired `wait_for()` publisher stalls instead of data
+  /// being overwritten.  Continuous streams only: one-shot latches (done,
+  /// calibration, model paths) must stay keep-last for late joiners.  Pair
+  /// with `wait_for`, never `wait_forever`, and expect a stalled consumer to
+  /// hold up the whole DDS connection, not just this topic.
+  QoS& refuse_when_full(size_t n) {
+    // KeepAll is what makes the rhc enforce max_samples instead of
+    // overwriting (depth only exists for KeepLast).
+    history = History::KeepAll;
+    max_samples = n;
     return *this;
   }
   /// Block when the in-flight window is full, without a deadline.

@@ -41,6 +41,7 @@ struct QosState {
   int32_t depth = 10;
   dds_reliability_kind_t reliability = DDS_RELIABILITY_RELIABLE;
   dds_durability_kind_t durability = DDS_DURABILITY_VOLATILE;
+  int32_t max_samples = DDS_LENGTH_UNLIMITED;
 };
 
 struct ReaderState {
@@ -85,7 +86,7 @@ dds_entity_t last_readcond_h = 0;
 dds_entity_t alloc_handle() { return next_handle++; }
 
 QosView snapshot(const QosState& s) {
-  return QosView{s.history, s.depth, s.reliability, s.durability};
+  return QosView{s.history, s.depth, s.reliability, s.durability, s.max_samples};
 }
 
 // Reader owning a read-condition (conditions are created per reader).
@@ -208,6 +209,14 @@ void dds_qset_reliability(dds_qos_t* __restrict qos, dds_reliability_kind_t kind
 void dds_qset_durability(dds_qos_t* __restrict qos, dds_durability_kind_t kind) {
   std::lock_guard<std::mutex> lock(mock_dds::internal::mtx);
   mock_dds::internal::qos_state[qos_key(qos)].durability = kind;
+}
+
+void dds_qset_resource_limits(dds_qos_t* __restrict qos, int32_t max_samples,
+                              int32_t max_instances, int32_t max_samples_per_instance) {
+  (void)max_instances;
+  (void)max_samples_per_instance;
+  std::lock_guard<std::mutex> lock(mock_dds::internal::mtx);
+  mock_dds::internal::qos_state[qos_key(qos)].max_samples = max_samples;
 }
 
 void dds_qset_deadline(dds_qos_t* __restrict qos, dds_duration_t period) {
