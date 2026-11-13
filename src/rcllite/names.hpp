@@ -1,7 +1,7 @@
 // Copyright 2026 rcllite contributors
 // Licensed under the Apache License, Version 2.0
-#ifndef RCLLITE__NAMES_HPP_
-#define RCLLITE__NAMES_HPP_
+#ifndef RCLLITE_NAMES_HPP_
+#define RCLLITE_NAMES_HPP_
 
 #include <string>
 
@@ -32,4 +32,4 @@ std::string dds_type_name(const std::string& type);
 
 }  // namespace rcl
 
-#endif  // RCLLITE__NAMES_HPP_
+#endif  // RCLLITE_NAMES_HPP_

@@ -3,12 +3,14 @@
 //
 // Thin RAII wrappers around the CycloneDDS C entities rcllite needs.
 // Every writer/reader talks "opaque CDR": payloads are pre-serialized blobs.
-#ifndef RCLLITE__DDS__ENTITIES_HPP_
-#define RCLLITE__DDS__ENTITIES_HPP_
+#ifndef RCLLITE_DDS_ENTITIES_HPP_
+#define RCLLITE_DDS_ENTITIES_HPP_
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -75,6 +77,12 @@ class Participant {
   dds_entity_t sub_ = DDS_RETCODE_ERROR;
 };
 
+enum class WriteStatus : uint8_t {
+  Ok,        ///< sample handed to the writer history
+  TimedOut,  ///< wait window full and `wait_for` expired; nothing written
+  Failed,    ///< serialization/allocation or DDS write error
+};
+
 class Writer {
  public:
   Writer(dds_entity_t participant, dds_entity_t dds_publisher, const std::string& topic,
@@ -86,14 +94,25 @@ class Writer {
 
   /// Publish a serialized CDR payload (encapsulation header included).
   /// Thread-safe: CycloneDDS writers may be written from any thread.
-  bool write(const uint8_t* payload, size_t size);
+  /// With `QoS::Wait` set, blocks while the in-flight window (keep-last depth)
+  /// is unacknowledged by the matched readers; `TimedOut` means the sample
+  /// was NOT written.
+  WriteStatus write(const uint8_t* payload, size_t size);
 
   /// Number of matched readers (publisher-side availability check).
   size_t reader_count() const;
 
  private:
+  std::string topic_;  // DDS name, for diagnostics
   dds_entity_t wr_ = DDS_RETCODE_ERROR;
   struct ddsi_sertype* sertype_ = nullptr;  // owned by the topic
+  // Flow control; all unused when QoS::Wait == None.
+  size_t depth_ = 0;
+  size_t pending_ = 0;  // samples written since the last ack barrier
+  QoS::Wait wait_ = QoS::Wait::None;
+  std::chrono::nanoseconds wait_timeout_{0};
+  bool warned_timeout_ = false;
+  std::mutex wait_mtx_;
 };
 
 class Reader {
@@ -186,4 +205,4 @@ std::string tcp_config_xml(uint16_t port, const std::vector<std::string>& peers,
 }  // namespace dds
 }  // namespace rcl
 
-#endif  // RCLLITE__DDS__ENTITIES_HPP_
+#endif  // RCLLITE_DDS_ENTITIES_HPP_

@@ -1,7 +1,7 @@
 // Copyright 2026 rcllite contributors
 // Licensed under the Apache License, Version 2.0
-#ifndef RCLLITE__SUBSCRIPTION_HPP_
-#define RCLLITE__SUBSCRIPTION_HPP_
+#ifndef RCLLITE_SUBSCRIPTION_HPP_
+#define RCLLITE_SUBSCRIPTION_HPP_
 
 #include <functional>
 #include <memory>
@@ -57,4 +57,4 @@ class Subscription : public EntityBase {
 
 }  // namespace rcl
 
-#endif  // RCLLITE__SUBSCRIPTION_HPP_
+#endif  // RCLLITE_SUBSCRIPTION_HPP_

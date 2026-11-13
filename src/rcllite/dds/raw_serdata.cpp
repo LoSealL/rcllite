@@ -229,7 +229,9 @@ struct ddsi_sertype* create_raw_sertype(const char* type_name) {
   }
   ddsi_sertype_init_flags(st, type_name, &raw_sertype_ops, &raw_serdata_ops,
                           DDSI_SERTYPE_FLAG_TOPICKIND_NO_KEY);
-  st->allowed_data_representation = DDS_DATA_REPRESENTATION_FLAG_XCDR1;
+  // The CycloneDDS flag macro shifts by a signed enum constant.
+  st->allowed_data_representation =
+      static_cast<uint32_t>(DDS_DATA_REPRESENTATION_FLAG_XCDR1);  // NOLINT
   return st;
 }
 

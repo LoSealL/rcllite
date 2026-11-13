@@ -164,6 +164,15 @@ int main()
   pub->wait_for_subscribers();                           // block until the first subscriber matches
   bool sent = pub->publish(msg, std::chrono::seconds(1)); // backpressure: false = timed out, nothing written
 
+  // Flow control between topics: with a QoS wait policy a publisher stops
+  // instead of overwriting its keep-last window.  Once `depth` samples are
+  // unacknowledged it blocks until the matched readers ack (or the timeout
+  // expires — false = the sample was not written):
+  auto frames =
+    node->create_publisher<rcl_interfaces::msg::Parameter>(
+      "frames", rcl::QoS().keep_last(4).wait_forever());   // or .wait_for(2s)
+  frames->publish(msg);
+
   node->create_subscription<rcl_interfaces::msg::Parameter>(
     "echo", [](const rcl_interfaces::msg::Parameter & m) { /* ... */ });
 
@@ -229,7 +238,10 @@ default values). `wstring` is not supported yet.
 
 - `Publisher::publish` / `Client::async_send_request` may be called from any
   thread; the blocking variants (`publish(msg, timeout)`,
-  `wait_for_subscribers`) additionally stall the calling thread.
+  `wait_for_subscribers`, a QoS wait policy) additionally stall the calling
+  thread.  The ack wait is transport-level: a reader that receives and
+  enqueues a sample acks it, so a downstream node that moves work into its own
+  bounded queue is paced only by network/reader stalls, not by that queue.
 - Callbacks (subscriptions, services, parameter services) are dispatched on
   the `Executor::spin` thread; within a single executor callbacks are
   naturally serialized — no locking needed.
@@ -240,6 +252,9 @@ default values). `wstring` is not supported yet.
 `rcl::QoS` supports reliability (reliable/best-effort), durability
 (volatile/transient-local), history (keep-last N / keep-all); the presets
 match `rmw_qos_profile_default/sensor_data/parameters/parameter_events/services`.
+`wait_forever()` / `wait_for()` add publisher flow control: when the keep-last
+window is full the write blocks until the readers acknowledge (reliable +
+keep-last only; it is a local policy, not a DDS wire property).
 deadline, lifespan and liveliness are not implemented.
 
 ## Directory layout

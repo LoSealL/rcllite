@@ -106,9 +106,9 @@ std::shared_ptr<NodeEntry> lookup(int64_t handle) {
   return it->second;
 }
 
-int64_t NodeCreate_(const std::string& name, const std::string& namespace_) {
+int64_t node_create_impl(const std::string& name, const std::string& ns) {
   auto entry = std::make_shared<NodeEntry>();
-  entry->node = std::make_shared<rcl::Node>(name, namespace_);
+  entry->node = std::make_shared<rcl::Node>(name, ns);
   entry->executor = std::make_unique<rcl::Executor>();
   entry->executor->add_node(entry->node);
 
@@ -118,7 +118,7 @@ int64_t NodeCreate_(const std::string& name, const std::string& namespace_) {
   return handle;
 }
 
-void NodeDestroy_(int64_t handle) {
+void node_destroy_impl(int64_t handle) {
   std::shared_ptr<NodeEntry> entry;
   {
     std::lock_guard<std::mutex> lock(g_registry_mtx);
@@ -134,23 +134,23 @@ void NodeDestroy_(int64_t handle) {
   entry->executor->cancel();
 }
 
-std::string NodeName_(int64_t handle) { return lookup(handle)->node->get_name(); }
+std::string node_name_impl(int64_t handle) { return lookup(handle)->node->get_name(); }
 
-std::string NodeNamespace_(int64_t handle) {
+std::string node_namespace_impl(int64_t handle) {
   return lookup(handle)->node->get_namespace();
 }
 
-std::string NodeFqName_(int64_t handle) {
+std::string node_fq_name_impl(int64_t handle) {
   return lookup(handle)->node->get_fully_qualified_name();
 }
 
-void NodeSpin_(int64_t handle) { lookup(handle)->executor->spin(); }
+void node_spin_impl(int64_t handle) { lookup(handle)->executor->spin(); }
 
-bool NodeSpinOnce_(int64_t handle, int64_t timeout_ms) {
+bool node_spin_once_impl(int64_t handle, int64_t timeout_ms) {
   return lookup(handle)->executor->spin_once(std::chrono::milliseconds(timeout_ms));
 }
 
-void NodeCancel_(int64_t handle) { lookup(handle)->executor->cancel(); }
+void node_cancel_impl(int64_t handle) { lookup(handle)->executor->cancel(); }
 
 // --- pub/sub ----------------------------------------------------------------
 
@@ -178,8 +178,8 @@ void check_cdr_payload(const tvm::ffi::Bytes& payload, const std::string& topic)
   }
 }
 
-void InitDds_(int64_t tcp_port, const std::vector<std::string>& peers,
-              int64_t domain_id, const std::string& interface) {
+void init_dds_impl(int64_t tcp_port, const std::vector<std::string>& peers,
+                   int64_t domain_id, const std::string& interface) {
   if (tcp_port > 0xFFFF) {
     TVM_FFI_THROW(ValueError) << "tcp_port out of range: " << tcp_port;
   }
@@ -205,9 +205,9 @@ void InitDds_(int64_t tcp_port, const std::vector<std::string>& peers,
   rcl::dds::Context::configure(domain, xml);
 }
 
-int64_t PubCreate_(int64_t node_handle, const std::string& topic,
-                   const std::string& type_name, int64_t depth, bool reliable,
-                   bool transient_local) {
+int64_t pub_create_impl(int64_t node_handle, const std::string& topic,
+                        const std::string& type_name, int64_t depth, bool reliable,
+                        bool transient_local) {
   const std::string dds_type = rcl::dds_type_name(type_name);
   const std::lock_guard<std::mutex> lock(g_registry_mtx);
   const auto it = g_registry.find(node_handle);
@@ -227,7 +227,7 @@ int64_t PubCreate_(int64_t node_handle, const std::string& topic,
   return handle;
 }
 
-void PubPublish_(int64_t handle, const tvm::ffi::Bytes& payload) {
+void pub_publish_impl(int64_t handle, const tvm::ffi::Bytes& payload) {
   std::shared_ptr<PubEntry> pub;
   {
     // Held across the write so a concurrent pub_destroy of the same handle
@@ -244,14 +244,14 @@ void PubPublish_(int64_t handle, const tvm::ffi::Bytes& payload) {
       TVM_FFI_THROW(ValueError) << "unknown publisher handle: " << handle;
     }
     check_cdr_payload(payload, pub->topic);
-    if (!pub->writer->write(reinterpret_cast<const uint8_t*>(payload.data()),
-                            payload.size())) {
+    if (pub->writer->write(reinterpret_cast<const uint8_t*>(payload.data()),
+                           payload.size()) != rcl::dds::WriteStatus::Ok) {
       TVM_FFI_THROW(ValueError) << "publish failed on '" << pub->topic << "'";
     }
   }
 }
 
-void PubDestroy_(int64_t handle) {
+void pub_destroy_impl(int64_t handle) {
   const std::lock_guard<std::mutex> lock(g_registry_mtx);
   for (const auto& [_, entry] : g_registry) {
     if (entry->pubs.erase(handle) > 0) {
@@ -260,10 +260,10 @@ void PubDestroy_(int64_t handle) {
   }
 }
 
-int64_t SubCreate_(int64_t node_handle, const std::string& topic,
-                   const std::string& type_name, int64_t depth, bool reliable,
-                   bool transient_local,
-                   tvm::ffi::TypedFunction<void(tvm::ffi::Bytes)> callback) {
+int64_t sub_create_impl(int64_t node_handle, const std::string& topic,
+                        const std::string& type_name, int64_t depth, bool reliable,
+                        bool transient_local,
+                        tvm::ffi::TypedFunction<void(tvm::ffi::Bytes)> callback) {
   const std::string dds_type = rcl::dds_type_name(type_name);
   const std::lock_guard<std::mutex> lock(g_registry_mtx);
   const auto it = g_registry.find(node_handle);
@@ -285,7 +285,7 @@ int64_t SubCreate_(int64_t node_handle, const std::string& topic,
   return handle;
 }
 
-void SubDestroy_(int64_t handle) {
+void sub_destroy_impl(int64_t handle) {
   std::shared_ptr<SubEntry> sub;
   std::shared_ptr<rcl::Node> node;
   {
@@ -311,19 +311,19 @@ void SubDestroy_(int64_t handle) {
 std::mutex g_graph_mtx;
 std::unique_ptr<rcl::GraphMonitor> g_graph;
 
-void GraphStart_() {
+void graph_start_impl() {
   const std::lock_guard<std::mutex> lock(g_graph_mtx);
   if (!g_graph) {
     g_graph = std::make_unique<rcl::GraphMonitor>();
   }
 }
 
-void GraphStop_() {
+void graph_stop_impl() {
   const std::lock_guard<std::mutex> lock(g_graph_mtx);
   g_graph.reset();
 }
 
-std::string GraphSnapshot_() {
+std::string graph_snapshot_impl() {
   std::unique_lock<std::mutex> lock(g_graph_mtx);
   if (!g_graph) {
     TVM_FFI_THROW(ValueError) << "graph monitor not started";
@@ -339,7 +339,7 @@ std::mutex g_graph_exec_mtx;
 std::unordered_map<int64_t, std::unique_ptr<rcl::GraphExecutor>> g_graph_execs;
 int64_t g_next_graph_exec = 1;
 
-int64_t GraphExecCreate_(const std::string& json_topology) {
+int64_t graph_exec_create_impl(const std::string& json_topology) {
   // Build first so a config error throws before registering anything.
   auto executor = std::make_unique<rcl::GraphExecutor>(json_topology);
   const std::lock_guard<std::mutex> lock(g_graph_exec_mtx);
@@ -357,23 +357,23 @@ rcl::GraphExecutor* graph_exec_lookup(int64_t handle) {
   return it->second.get();
 }
 
-void GraphExecSpin_(int64_t handle) { graph_exec_lookup(handle)->spin(); }
+void graph_exec_spin_impl(int64_t handle) { graph_exec_lookup(handle)->spin(); }
 
-bool GraphExecSpinOnce_(int64_t handle, int64_t timeout_ms) {
+bool graph_exec_spin_once_impl(int64_t handle, int64_t timeout_ms) {
   return graph_exec_lookup(handle)->spin_once(std::chrono::milliseconds(timeout_ms));
 }
 
-void GraphExecCancel_(int64_t handle) { graph_exec_lookup(handle)->cancel(); }
+void graph_exec_cancel_impl(int64_t handle) { graph_exec_lookup(handle)->cancel(); }
 
-std::string GraphExecStatus_(int64_t handle) {
+std::string graph_exec_status_impl(int64_t handle) {
   return graph_exec_lookup(handle)->status_json();
 }
 
-std::string GraphExecRegisteredNodes_() {
+std::string graph_exec_registered_nodes_impl() {
   return rcl::GraphExecutor::registered_nodes_json();
 }
 
-void GraphExecDestroy_(int64_t handle) {
+void graph_exec_destroy_impl(int64_t handle) {
   std::unique_ptr<rcl::GraphExecutor> executor;
   {
     const std::lock_guard<std::mutex> lock(g_graph_exec_mtx);
@@ -390,27 +390,28 @@ void GraphExecDestroy_(int64_t handle) {
 
 }  // namespace
 
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(node_create, NodeCreate_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(node_destroy, NodeDestroy_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(node_name, NodeName_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(node_namespace, NodeNamespace_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(node_fully_qualified_name, NodeFqName_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(node_spin, NodeSpin_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(node_spin_once, NodeSpinOnce_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(node_cancel, NodeCancel_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(init_dds, InitDds_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(pub_create, PubCreate_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(pub_publish, PubPublish_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(pub_destroy, PubDestroy_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(sub_create, SubCreate_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(sub_destroy, SubDestroy_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(graph_start, GraphStart_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(graph_stop, GraphStop_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(graph_snapshot, GraphSnapshot_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(graph_exec_create, GraphExecCreate_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(graph_exec_spin, GraphExecSpin_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(graph_exec_spin_once, GraphExecSpinOnce_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(graph_exec_cancel, GraphExecCancel_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(graph_exec_status, GraphExecStatus_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(graph_exec_registered_nodes, GraphExecRegisteredNodes_)
-TVM_FFI_DLL_EXPORT_TYPED_FUNC(graph_exec_destroy, GraphExecDestroy_)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(node_create, node_create_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(node_destroy, node_destroy_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(node_name, node_name_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(node_namespace, node_namespace_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(node_fully_qualified_name, node_fq_name_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(node_spin, node_spin_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(node_spin_once, node_spin_once_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(node_cancel, node_cancel_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(init_dds, init_dds_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(pub_create, pub_create_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(pub_publish, pub_publish_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(pub_destroy, pub_destroy_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(sub_create, sub_create_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(sub_destroy, sub_destroy_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(graph_start, graph_start_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(graph_stop, graph_stop_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(graph_snapshot, graph_snapshot_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(graph_exec_create, graph_exec_create_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(graph_exec_spin, graph_exec_spin_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(graph_exec_spin_once, graph_exec_spin_once_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(graph_exec_cancel, graph_exec_cancel_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(graph_exec_status, graph_exec_status_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(graph_exec_registered_nodes,
+                              graph_exec_registered_nodes_impl)
+TVM_FFI_DLL_EXPORT_TYPED_FUNC(graph_exec_destroy, graph_exec_destroy_impl)

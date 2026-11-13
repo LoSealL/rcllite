@@ -8,8 +8,8 @@
 //   * strings are uint32 length + bytes + NUL
 //   * sequences are uint32 length + elements
 //   * fixed-size arrays are stored without a length prefix
-#ifndef RCLLITE__CDR_HPP_
-#define RCLLITE__CDR_HPP_
+#ifndef RCLLITE_CDR_HPP_
+#define RCLLITE_CDR_HPP_
 
 #include <cstdint>
 #include <cstring>
@@ -90,7 +90,8 @@ class CdrReader {
     // The RTPS encapsulation identifier is always big endian on the wire:
     // 0x0001 = CDR_LE payload, 0x0000 = CDR_BE.  ROS 2 writes CDR_LE;
     // rcllite only parses little endian payloads.
-    const uint16_t id = static_cast<uint16_t>((buf_[0] << 8) | buf_[1]);
+    const uint16_t id = static_cast<uint16_t>((static_cast<unsigned>(buf_[0]) << 8U) |
+                                              static_cast<unsigned>(buf_[1]));
     if (id != 0x0001) {
       throw Error(
           vila::InvalidArguments("unsupported CDR encapsulation (expected CDR_LE)"));
@@ -160,4 +161,4 @@ class CdrReader {
 
 }  // namespace rcl
 
-#endif  // RCLLITE__CDR_HPP_
+#endif  // RCLLITE_CDR_HPP_

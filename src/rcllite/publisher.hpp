@@ -1,7 +1,7 @@
 // Copyright 2026 rcllite contributors
 // Licensed under the Apache License, Version 2.0
-#ifndef RCLLITE__PUBLISHER_HPP_
-#define RCLLITE__PUBLISHER_HPP_
+#ifndef RCLLITE_PUBLISHER_HPP_
+#define RCLLITE_PUBLISHER_HPP_
 
 #include <chrono>
 #include <cstddef>
@@ -33,13 +33,19 @@ class Publisher {
   }
 
   /// Serialize with the message's MessageType support and publish.
-  /// Safe to call from any thread.
-  void publish(const MessageT& msg) {
+  /// With `QoS::wait_forever()`/`wait_for()` the call blocks while the
+  /// in-flight window (keep-last depth) awaits reader acknowledgement —
+  /// returns false if that wait timed out (nothing written).  Throws if the
+  /// write itself fails.  Safe to call from any thread.
+  bool publish(const MessageT& msg) {
     CdrWriter w;
     MessageT::serialize(msg, w);
-    if (!writer_->write(w.payload().data(), w.payload().size())) {
+    const dds::WriteStatus status =
+        writer_->write(w.payload().data(), w.payload().size());
+    if (status == dds::WriteStatus::Failed) {
       throw Error(vila::InternalError("publish failed on {}", ros_topic_));
     }
+    return status == dds::WriteStatus::Ok;
   }
 
   /// Backpressure publish: wait up to `timeout` while no subscription is
@@ -49,16 +55,17 @@ class Publisher {
   /// the inherent DDS race of a subscriber leaving again before the write.
   /// Returns false without writing if nobody matched within `timeout` —
   /// nothing is dropped and the caller can retry; throws like publish()
-  /// if the write itself fails.  Transient-local publishers already
-  /// deliver their history to late joiners and rarely need this.  Safe to
-  /// call from any thread, but blocks the calling one: avoid it inside
-  /// executor callbacks unless stalling the spin thread is intended.
+  /// if the write itself fails.  A publisher with a QoS wait policy may
+  /// block further on acknowledgement after the subscriber appears.
+  /// Transient-local publishers already deliver their history to late
+  /// joiners and rarely need this.  Safe to call from any thread, but
+  /// blocks the calling one: avoid it inside executor callbacks unless
+  /// stalling the spin thread is intended.
   bool publish(const MessageT& msg, std::chrono::nanoseconds timeout) {
     if (!wait_for_subscribers(timeout)) {
       return false;
     }
-    publish(msg);
-    return true;
+    return publish(msg);
   }
 
   /// Number of currently matched subscriptions (discovered readers).
@@ -87,4 +94,4 @@ class Publisher {
 
 }  // namespace rcl
 
-#endif  // RCLLITE__PUBLISHER_HPP_
+#endif  // RCLLITE_PUBLISHER_HPP_

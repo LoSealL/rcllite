@@ -14,6 +14,8 @@
 #include "mock/mock_ddsc.h"
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdlib>
 #include <cstring>
 #include <map>
@@ -52,6 +54,7 @@ struct ReaderState {
 struct WriterState {
   std::vector<std::vector<uint8_t>> written;
   int32_t matched = 0;
+  size_t unacked = 0;  // samples awaiting dds_wait_for_acks
   QosView qos{};
 };
 
@@ -64,6 +67,7 @@ struct WaitsetState {
 };
 
 std::mutex mtx;
+std::condition_variable acks_cv;  // ack_all() releases dds_wait_for_acks
 // dds_qos_t stays opaque (the ddsi headers define the real struct); the mock
 // keeps the QoS values set through the q setters in a pointer-keyed map.
 std::map<const dds_qos_t*, QosState> qos_state;
@@ -142,6 +146,14 @@ void set_matched_writers(dds_entity_t reader, int32_t count) {
 void set_matched_readers(dds_entity_t writer, int32_t count) {
   std::lock_guard<std::mutex> lock(internal::mtx);
   internal::writers[writer].matched = count;
+}
+
+void ack_all(dds_entity_t writer) {
+  {
+    std::lock_guard<std::mutex> lock(internal::mtx);
+    internal::writers[writer].unacked = 0;
+  }
+  internal::acks_cv.notify_all();
 }
 
 const QosView* writer_qos(dds_entity_t writer) {
@@ -387,10 +399,35 @@ dds_return_t dds_writecdr(dds_entity_t writer, struct ddsi_serdata* serdata) {
     if (rc == DDS_RETCODE_OK) {
       const auto* d = reinterpret_cast<const mock_dds::internal::MockSerdata*>(serdata);
       mock_dds::internal::writers[writer].written.push_back(d->payload);
+      ++mock_dds::internal::writers[writer].unacked;
     }
   }
   ddsi_serdata_unref(serdata);  // consumes one reference on every path
   return rc;
+}
+
+// Mirrors ddsi_writer_wait_for_acks: returns once everything written so far
+// is acked, DDS_RETCODE_TIMEOUT when the deadline passes first (DDS_INFINITY
+// waits forever).  ack_all() is the test-side ack source.
+dds_return_t dds_wait_for_acks(dds_entity_t writer, dds_duration_t timeout) {
+  std::unique_lock<std::mutex> lock(mock_dds::internal::mtx);
+  auto it = mock_dds::internal::writers.find(writer);
+  if (it == mock_dds::internal::writers.end()) {
+    return DDS_RETCODE_BAD_PARAMETER;
+  }
+  auto acked = [&it] { return it->second.unacked == 0; };
+  if (acked()) {
+    return DDS_RETCODE_OK;
+  }
+  if (timeout == DDS_INFINITY) {
+    mock_dds::internal::acks_cv.wait(lock, acked);
+    return DDS_RETCODE_OK;
+  }
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::nanoseconds(timeout);
+  return mock_dds::internal::acks_cv.wait_until(lock, deadline, acked)
+             ? DDS_RETCODE_OK
+             : DDS_RETCODE_TIMEOUT;
 }
 
 dds_return_t dds_takecdr(dds_entity_t reader, struct ddsi_serdata** buf, uint32_t maxs,

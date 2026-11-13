@@ -49,6 +49,10 @@ void set_matched_writers(dds_entity_t reader, int32_t count);
 /// and the backpressure publish overload).
 void set_matched_readers(dds_entity_t writer, int32_t count);
 
+/// Mark every sample written so far on `writer` as acknowledged, releasing a
+/// blocked dds_wait_for_acks (the test-side "downstream consumed" signal).
+void ack_all(dds_entity_t writer);
+
 /// QoS values captured when a reader/writer was created (as translated by
 /// rcl::dds::make_dds_qos).
 struct QosView {

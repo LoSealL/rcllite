@@ -1,7 +1,7 @@
 // Copyright 2026 rcllite contributors
 // Licensed under the Apache License, Version 2.0
-#ifndef RCLLITE__EXECUTOR_HPP_
-#define RCLLITE__EXECUTOR_HPP_
+#ifndef RCLLITE_EXECUTOR_HPP_
+#define RCLLITE_EXECUTOR_HPP_
 
 #include <atomic>
 #include <chrono>
@@ -81,4 +81,4 @@ void spin(std::shared_ptr<Node> node);
 
 }  // namespace rcl
 
-#endif  // RCLLITE__EXECUTOR_HPP_
+#endif  // RCLLITE_EXECUTOR_HPP_

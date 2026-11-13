@@ -14,9 +14,9 @@ namespace rcl {
 
 Node::Node(const std::string& name) : Node(name, "/") {}
 
-Node::Node(const std::string& name, const std::string& namespace_)
+Node::Node(const std::string& name, const std::string& ns)
     : name_(name),
-      ns_(namespace_.empty() ? "/" : namespace_),
+      ns_(ns.empty() ? "/" : ns),
       fq_name_(make_fq_node_name(ns_, name)),
       domain_id_(dds::Context::instance().domain_id()),
       change_guard_(std::make_unique<dds::GuardCondition>()) {

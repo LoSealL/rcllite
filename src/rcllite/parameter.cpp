@@ -315,7 +315,7 @@ struct ParameterCore::Impl {
       }
       if (!all_declared) {
         r.reason = "parameters not declared: " + r.reason;
-        resp.result = r;
+        resp.result = std::move(r);
         return resp;
       }
     }
@@ -323,7 +323,7 @@ struct ParameterCore::Impl {
       set(p.name, from_rcl_value(p.value));
     }
     r.successful = true;
-    resp.result = r;
+    resp.result = std::move(r);
     return resp;
   }
 

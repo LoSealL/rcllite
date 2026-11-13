@@ -51,8 +51,8 @@ std::string guid_hex(const dds_guid_t& g) {
   std::string out;
   out.reserve(sizeof(g.v) * 2);
   for (const uint8_t byte : g.v) {
-    out += digits[byte >> 4];
-    out += digits[byte & 0xf];
+    out += digits[static_cast<unsigned>(byte) >> 4U];
+    out += digits[static_cast<unsigned>(byte) & 0xfU];
   }
   return out;
 }
@@ -448,7 +448,7 @@ std::string GraphMonitor::snapshot_json() {
       out += first ? "{" : ",{";
       out += "\"name\":" + json_escape_string(name);
       out += ",\"source\":" + json_escape_string(attrib.source);
-      out += "}";
+      out += '}';
       first = false;
     }
   }
@@ -465,7 +465,7 @@ std::string GraphMonitor::snapshot_json() {
       out += ",\"type\":" + json_escape_string(agg.type);
       out += ",\"publishers\":" + dump_names(agg.writers);
       out += ",\"subscriptions\":" + dump_names(agg.readers);
-      out += "}";
+      out += '}';
       first = false;
     }
   }
@@ -483,7 +483,7 @@ std::string GraphMonitor::snapshot_json() {
       out += ",\"type\":" + json_escape_string(agg.type);
       out += ",\"servers\":" + dump_names(agg.readers);
       out += ",\"clients\":" + dump_names(agg.writers);
-      out += "}";
+      out += '}';
       first = false;
     }
   }
@@ -496,7 +496,7 @@ std::string GraphMonitor::snapshot_json() {
       out += ",\"target\":" + json_escape_string(target);
       out += ",\"topic\":" + json_escape_string(name);
       out += ",\"kind\":" + json_escape_string(kind);
-      out += "}";
+      out += '}';
       first = false;
     }
   }
@@ -513,7 +513,7 @@ std::string GraphMonitor::snapshot_json() {
       out += ",\"type\":" + json_escape_string(info.type);
       out +=
           ",\"kind\":" + json_escape_string(info.writer ? "publisher" : "subscription");
-      out += "}";
+      out += '}';
       first = false;
     }
   }
@@ -531,7 +531,7 @@ std::string GraphMonitor::snapshot_json() {
       out += ",\"file\":" + json_escape_string(log.file);
       out += ",\"function\":" + json_escape_string(log.function);
       out += ",\"line\":" + std::to_string(log.line);
-      out += "}";
+      out += '}';
       first = false;
     }
   }

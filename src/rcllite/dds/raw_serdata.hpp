@@ -10,8 +10,8 @@
 // result via dds_writecdr(); incoming samples arrive as raw CDR blobs via
 // dds_takecdr().  This is the same approach rmw_cyclonedds uses for
 // rmw_publish_serialized_message, minus the introspection machinery.
-#ifndef RCLLITE__DDS__RAW_SERDATA_HPP_
-#define RCLLITE__DDS__RAW_SERDATA_HPP_
+#ifndef RCLLITE_DDS_RAW_SERDATA_HPP_
+#define RCLLITE_DDS_RAW_SERDATA_HPP_
 
 #include <cstddef>
 #include <cstdint>
@@ -50,4 +50,4 @@ size_t raw_serdata_payload_size(const struct ddsi_serdata* d);
 }  // namespace dds
 }  // namespace rcl
 
-#endif  // RCLLITE__DDS__RAW_SERDATA_HPP_
+#endif  // RCLLITE_DDS_RAW_SERDATA_HPP_
