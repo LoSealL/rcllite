@@ -4,10 +4,14 @@
 #define RCLLITE_GRAPH_EXECUTOR_HPP_
 
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace rcl {
+
+class Node;
 
 /// Config-driven topology launcher: instantiates every node described by a
 /// topology document and runs them on one shared Executor — equivalent to
@@ -85,6 +89,23 @@ class GraphExecutor {
 
   /// Per-node/per-endpoint counters as JSON: published / received.
   std::string status_json() const;
+
+  /// The built nodes in topology order (class instances and plain
+  /// skeletons alike); a host reads their endpoint topology
+  /// (pub_topics()/sub_topics()) after construction quiesces.
+  std::vector<std::shared_ptr<Node>> nodes() const;
+
+  /// Install the graph-finished callback (fired once, from a scheduler
+  /// thread, when every CLASS node's on_deinit returned).  Install before
+  /// spin(); finished() stays authoritative either way.
+  void set_on_finished(std::function<void()> callback);
+
+  /// Install the shutdown callback (fired when any node calls
+  /// request_graph_shutdown(): window closed, fatal error).
+  void set_on_shutdown(std::function<void()> callback);
+
+  /// True when every class node finished (all on_deinit returned).
+  bool finished() const;
 
   /// Names of all RCLLITE_REGISTER_NODE classes in this binary, as a JSON
   /// array (sorted).  These are the values a topology "class" field accepts.

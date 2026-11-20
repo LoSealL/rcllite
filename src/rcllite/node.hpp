@@ -4,6 +4,7 @@
 #define RCLLITE_NODE_HPP_
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -110,8 +111,68 @@ class Node : public std::enable_shared_from_this<Node> {
   /// services plus the /parameter_events publisher.
   ParameterCore& params() const;
 
+  // --- endpoint topology -----------------------------------------------------
+
+  /// Expanded topic names this node publishes on, in creation order and
+  /// including dual-QoS duplicates.  A host reads this after construction
+  /// quiesces to derive endpoint topology without discovery.
+  std::vector<std::string> pub_topics() const;
+
+  /// Expanded topic names this node subscribes to, same contract as
+  /// pub_topics().
+  std::vector<std::string> sub_topics() const;
+
+  // --- lifecycle -------------------------------------------------------------
+
+  /// Wire endpoints (create publishers/subscriptions) here: the owning
+  /// GraphExecutor calls it once for every node, after all nodes are
+  /// constructed and before anything streams.  Final-output publishing
+  /// belongs in on_deinit(), never here.
+  virtual void on_init() {}
+
+  /// Finalize here: write artifacts, publish the final latches, and return
+  /// only once every output is out.  The executor calls it in topological
+  /// order -- after every feeder's on_deinit returned -- so subscriptions
+  /// already hold the feeders' finals.
+  virtual void on_deinit() {}
+
+  /// Lifecycle event sink installed by the owning host (GraphExecutor, a
+  /// standalone wrapper) before on_init() runs.  The seam for future
+  /// cross-process coordination: a remote-backed host can feed the same
+  /// events from off-process nodes.
+  struct LifecycleSink {
+    /// mark_batch_finished() lands here (the executor may then run
+    /// on_deinit once the feeders are done).
+    std::function<void(Node&)> batch_finished;
+    /// request_graph_shutdown() lands here (window closed, fatal error).
+    std::function<void()> shutdown_requested;
+    /// Park a streaming worker until the whole graph wired (every on_init
+    /// ran); false = the graph is unwinding, exit without streaming.
+    std::function<bool()> wait_graph_active;
+  };
+
+  /// Install the lifecycle sink; must precede on_init().
+  void set_lifecycle_sink(LifecycleSink sink);
+
+  /// Report this node's batch complete.  Idempotence is the host's call
+  /// (the executor ignores repeats).  Without a sink: a logged no-op, so
+  /// unhosted nodes never hang anything.
+  void mark_batch_finished();
+
+  /// Ask the host to stop the whole graph (window closed, fatal error).
+  /// Without a sink: a no-op.
+  void request_graph_shutdown();
+
+  /// Park until every on_init ran (see LifecycleSink).  True when active
+  /// or no sink is installed (standalone nodes stream immediately).
+  bool wait_graph_active();
+
  private:
   friend class ParameterCore;
+
+  /// Endpoint-topology bookkeeping, guarded by entities_mtx_.
+  void note_pub_topic(const std::string& fqn);
+  void note_sub_topic(const std::string& fqn);
 
   std::string name_;
   std::string ns_;
@@ -121,8 +182,13 @@ class Node : public std::enable_shared_from_this<Node> {
 
   mutable std::mutex entities_mtx_;
   std::vector<std::shared_ptr<EntityBase>> entities_;
+  std::vector<std::string> pub_topics_;  ///< Endpoint topology (see accessor).
+  std::vector<std::string> sub_topics_;  ///< Endpoint topology (see accessor).
   uint64_t entity_epoch_ = 0;
   std::unique_ptr<dds::GuardCondition> change_guard_;
+
+  mutable std::mutex lifecycle_mtx_;
+  LifecycleSink lifecycle_sink_;  ///< Host-installed; see set_lifecycle_sink().
 
   mutable std::mutex params_mtx_;
   mutable std::unique_ptr<ParameterCore> params_;

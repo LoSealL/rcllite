@@ -34,6 +34,15 @@ class Executor {
   void add_node(std::shared_ptr<Node> node);
   void remove_node(const std::shared_ptr<Node>& node);
 
+  /// Attach a standalone waitable (guard-driven, no owning node): its
+  /// dispatch() runs on the spin thread like any subscription.  Hosts use
+  /// this to drive their own coordination through the executor's reactor
+  /// instead of a private thread.
+  void add_waitable(std::shared_ptr<EntityBase> entity);
+
+  /// Detach a standalone waitable.
+  void remove_waitable(const std::shared_ptr<EntityBase>& entity);
+
   /// Process events until cancel().  Callable once at a time.
   void spin();
 
@@ -69,6 +78,7 @@ class Executor {
 
   std::mutex nodes_mtx_;
   std::vector<std::shared_ptr<Node>> nodes_;
+  std::vector<std::shared_ptr<EntityBase>> waitables_;  // standalone (add_waitable)
 
   // attachment bookkeeping (guarded by nodes_mtx_): attachment id -> entry
   std::unordered_map<dds_attach_t, Attached> attached_;

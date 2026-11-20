@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "rcllite/exception.hpp"
+#include "rcllite/logging.hpp"
 #include "rcllite/names.hpp"
 #include "rcllite/publisher.hpp"
 #include "rcllite_types/rmw_dds_common/participant_entities_info.hpp"
@@ -96,6 +97,65 @@ void Node::remove_entity(const std::shared_ptr<EntityBase>& entity) {
     ++entity_epoch_;
   }
   change_guard_->trigger();
+}
+
+std::vector<std::string> Node::pub_topics() const {
+  std::lock_guard<std::mutex> lock(entities_mtx_);
+  return pub_topics_;
+}
+
+std::vector<std::string> Node::sub_topics() const {
+  std::lock_guard<std::mutex> lock(entities_mtx_);
+  return sub_topics_;
+}
+
+void Node::note_pub_topic(const std::string& fqn) {
+  std::lock_guard<std::mutex> lock(entities_mtx_);
+  pub_topics_.push_back(fqn);
+}
+
+void Node::note_sub_topic(const std::string& fqn) {
+  std::lock_guard<std::mutex> lock(entities_mtx_);
+  sub_topics_.push_back(fqn);
+}
+
+void Node::set_lifecycle_sink(LifecycleSink sink) {
+  std::lock_guard<std::mutex> lock(lifecycle_mtx_);
+  lifecycle_sink_ = std::move(sink);
+}
+
+void Node::mark_batch_finished() {
+  std::function<void(Node&)> report;
+  {
+    std::lock_guard<std::mutex> lock(lifecycle_mtx_);
+    report = lifecycle_sink_.batch_finished;
+  }
+  if (report) {
+    report(*this);
+  } else {
+    RCLLITE_LOGW("{}: mark_batch_finished with no lifecycle sink installed",
+                 fq_name_);
+  }
+}
+
+void Node::request_graph_shutdown() {
+  std::function<void()> request;
+  {
+    std::lock_guard<std::mutex> lock(lifecycle_mtx_);
+    request = lifecycle_sink_.shutdown_requested;
+  }
+  if (request) {
+    request();
+  }
+}
+
+bool Node::wait_graph_active() {
+  std::function<bool()> wait;
+  {
+    std::lock_guard<std::mutex> lock(lifecycle_mtx_);
+    wait = lifecycle_sink_.wait_graph_active;
+  }
+  return !wait || wait();
 }
 
 }  // namespace rcl
