@@ -8,7 +8,11 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
+#include <functional>
+#include <map>
+#include <stdexcept>
 #include <chrono>
 #include <memory>
 #include <string>
@@ -230,5 +234,185 @@ TEST_F(GraphExecutorTest, RuntimeRegisteredFactoryAndJsonListing) {
       rcl::Error);
   EXPECT_EQ(rcl::GraphExecutor::registered_nodes_json().find("temp::Node"),
             std::string::npos);
+}
+
+// --- lifecycle: on_init, the finish order, on_deinit --------------------------
+
+// A lifecycle test node: wires typed endpoints from a per-test config,
+// records the init/deinit order, reports its batch when the test says so.
+class LifecycleNode : public rcl::Node {
+ public:
+  struct Wiring {
+    std::vector<std::string> pubs;
+    std::vector<std::string> subs;
+  };
+  static std::map<std::string, Wiring> config;
+  static std::vector<std::string> init_order;
+  static std::vector<std::string> deinit_order;
+  static std::mutex order_mtx;
+
+  LifecycleNode(const std::string& name, const std::string& ns) : rcl::Node(name, ns) {}
+
+  void on_init() override {
+    {
+      std::lock_guard<std::mutex> lock(order_mtx);
+      init_order.push_back(get_name());
+    }
+    const Wiring& wiring = config.at(get_name());
+    for (const auto& topic : wiring.pubs) {
+      pubs_.push_back(create_publisher<Parameter>(topic));
+    }
+    for (const auto& topic : wiring.subs) {
+      create_subscription<Parameter>(
+          topic, [](const Parameter&) {}, rcl::QoS().keep_last(2));
+    }
+  }
+
+  void on_deinit() override {
+    std::lock_guard<std::mutex> lock(order_mtx);
+    deinit_order.push_back(get_name());
+  }
+
+ private:
+  std::vector<std::shared_ptr<rcl::Publisher<Parameter>>> pubs_;
+};
+
+std::map<std::string, LifecycleNode::Wiring> LifecycleNode::config;
+std::vector<std::string> LifecycleNode::init_order;
+std::vector<std::string> LifecycleNode::deinit_order;
+std::mutex LifecycleNode::order_mtx;
+
+RCLLITE_REGISTER_NODE(LifecycleNode);
+
+// A node whose on_init throws: construction must unwind cleanly.
+class ThrowingInitNode : public rcl::Node {
+ public:
+  ThrowingInitNode(const std::string& name, const std::string& ns) : rcl::Node(name, ns) {}
+  void on_init() override { throw std::runtime_error("boom"); }
+};
+
+RCLLITE_REGISTER_NODE(ThrowingInitNode);
+
+/// Poll fn every 2 ms until true or the deadline.
+bool wait_for(const std::function<bool()>& fn, double seconds) {
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::duration<double>(seconds);
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (fn()) {
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  }
+  return fn();
+}
+
+std::shared_ptr<rcl::Node> node_named(const rcl::GraphExecutor& exec,
+                                      const std::string& name) {
+  for (const auto& node : exec.nodes()) {
+    if (node->get_name() == name) {
+      return node;
+    }
+  }
+  return nullptr;
+}
+
+TEST_F(GraphExecutorTest, OnInitRunsForEveryClassNodeInTopologyOrder) {
+  LifecycleNode::config = {{"a", {}}, {"b", {}}, {"c", {}}};
+  LifecycleNode::init_order.clear();
+  LifecycleNode::deinit_order.clear();
+  rcl::GraphExecutor exec(R"({"deinit_drain": 0.0, "nodes": [
+      {"name": "a", "class": "LifecycleNode"},
+      {"name": "b", "class": "LifecycleNode"},
+      {"name": "c", "class": "LifecycleNode"}]})");
+  EXPECT_EQ((std::vector<std::string>{"a", "b", "c"}), LifecycleNode::init_order);
+}
+
+TEST_F(GraphExecutorTest, DeinitRunsFeederFirstRegardlessOfReportOrder) {
+  // a feeds b feeds c (typed endpoints from the declarations).
+  LifecycleNode::config = {
+      {"a", {{"/x"}, {}}}, {"b", {{"/y"}, {"/x"}}}, {"c", {{}, {"/y"}}}};
+  LifecycleNode::init_order.clear();
+  LifecycleNode::deinit_order.clear();
+  rcl::GraphExecutor exec(R"({"deinit_drain": 0.0, "nodes": [
+      {"name": "a", "class": "LifecycleNode"},
+      {"name": "b", "class": "LifecycleNode"},
+      {"name": "c", "class": "LifecycleNode"}]})");
+  // Report in REVERSE: only the executor's order can deinit a before c.
+  node_named(exec, "c")->mark_batch_finished();
+  node_named(exec, "b")->mark_batch_finished();
+  for (int i = 0; i < 5; ++i) {
+    exec.spin_once(10ms);  // c waits on b, b on a: nothing moves
+  }
+  EXPECT_FALSE(exec.finished());
+  node_named(exec, "a")->mark_batch_finished();
+  ASSERT_TRUE(wait_for([&exec] { exec.spin_once(10ms); return exec.finished(); }, 2.0));
+  EXPECT_EQ((std::vector<std::string>{"a", "b", "c"}), LifecycleNode::deinit_order);
+}
+
+TEST_F(GraphExecutorTest, CyclicWiringCollapsesIntoOneUnit) {
+  // Mutual wiring: a -> b and b -> a.  A plain topological walk would
+  // deadlock; the SCC unit deinits both once both reported.
+  LifecycleNode::config = {
+      {"a", {{"/p"}, {"/q"}}}, {"b", {{"/q"}, {"/p"}}}};
+  LifecycleNode::init_order.clear();
+  LifecycleNode::deinit_order.clear();
+  rcl::GraphExecutor exec(R"({"deinit_drain": 0.0, "nodes": [
+      {"name": "a", "class": "LifecycleNode"},
+      {"name": "b", "class": "LifecycleNode"}]})");
+  node_named(exec, "a")->mark_batch_finished();
+  for (int i = 0; i < 5; ++i) {
+    exec.spin_once(10ms);  // the unit needs every member's report
+  }
+  EXPECT_FALSE(exec.finished());
+  node_named(exec, "b")->mark_batch_finished();
+  ASSERT_TRUE(wait_for([&exec] { exec.spin_once(10ms); return exec.finished(); }, 2.0));
+  std::lock_guard<std::mutex> lock(LifecycleNode::order_mtx);
+  EXPECT_EQ(LifecycleNode::deinit_order.size(), 2U);
+}
+
+TEST_F(GraphExecutorTest, SccUnitFeedingConsumerWaitsForEveryMember) {
+  // p and q form a cycle; both feed r.  A fast sibling (p deinit done)
+  // must NOT release r while q still finalizes: the unit counts as done
+  // only when EVERY member deinitialized.
+  LifecycleNode::config = {
+      {"p", {{"/p_out"}, {"/q_out"}}},
+      {"q", {{"/q_out", "/feed"}, {"/p_out"}}},
+      {"r", {{}, {"/feed"}}}};
+  LifecycleNode::init_order.clear();
+  LifecycleNode::deinit_order.clear();
+  rcl::GraphExecutor exec(R"({"deinit_drain": 0.0, "nodes": [
+      {"name": "p", "class": "LifecycleNode"},
+      {"name": "q", "class": "LifecycleNode"},
+      {"name": "r", "class": "LifecycleNode"}]})");
+  node_named(exec, "r")->mark_batch_finished();
+  node_named(exec, "p")->mark_batch_finished();
+  node_named(exec, "q")->mark_batch_finished();
+  ASSERT_TRUE(wait_for([&exec] { exec.spin_once(10ms); return exec.finished(); }, 2.0));
+  std::lock_guard<std::mutex> lock(LifecycleNode::order_mtx);
+  const auto& order = LifecycleNode::deinit_order;
+  ASSERT_EQ(order.size(), 3U);
+  EXPECT_NE(std::find(order.begin(), order.end(), "r"),
+            std::find(order.begin(), order.end(), "q"));
+}
+
+TEST_F(GraphExecutorTest, FinishedCallbackFiresOnce) {
+  LifecycleNode::config = {{"a", {}}};
+  LifecycleNode::init_order.clear();
+  LifecycleNode::deinit_order.clear();
+  rcl::GraphExecutor exec(R"({"deinit_drain": 0.0, "nodes": [
+      {"name": "a", "class": "LifecycleNode"}]})");
+  std::atomic<int> fired{0};
+  exec.set_on_finished([&fired] { ++fired; });
+  node_named(exec, "a")->mark_batch_finished();
+  ASSERT_TRUE(wait_for(
+      [&] { exec.spin_once(10ms); return exec.finished() && fired.load() > 0; }, 2.0));
+  std::this_thread::sleep_for(50ms);
+  EXPECT_EQ(fired.load(), 1);
+}
+
+TEST_F(GraphExecutorTest, OnInitThrowUnwindsTheGraph) {
+  EXPECT_THROW(rcl::GraphExecutor(R"({"deinit_drain": 0.0, "nodes": [
+      {"name": "boom", "class": "ThrowingInitNode"}]})"),
+               rcl::Error);
 }
 }  // namespace

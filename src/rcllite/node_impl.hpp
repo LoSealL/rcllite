@@ -23,7 +23,9 @@ template <typename MessageT>
 std::shared_ptr<Publisher<MessageT>> Node::create_publisher(const std::string& topic,
                                                             const QoS& qos) {
   const std::string fqn = expand_topic_name(topic, ns_);
-  return std::make_shared<Publisher<MessageT>>(*ppant_, fqn, qos);
+  auto pub = std::make_shared<Publisher<MessageT>>(*ppant_, fqn, qos);
+  note_pub_topic(fqn);
+  return pub;
 }
 
 template <typename MessageT, typename CallbackT>
@@ -34,6 +36,7 @@ std::shared_ptr<Subscription<MessageT>> Node::create_subscription(
       *ppant_, fqn,
       typename Subscription<MessageT>::Callback(std::forward<CallbackT>(callback)),
       qos);
+  note_sub_topic(fqn);
   add_entity(sub);
   return sub;
 }

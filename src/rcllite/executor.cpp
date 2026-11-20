@@ -55,6 +55,25 @@ void Executor::remove_node(const std::shared_ptr<Node>& node) {
   wake_guard_.trigger();
 }
 
+void Executor::add_waitable(std::shared_ptr<EntityBase> entity) {
+  {
+    std::lock_guard<std::mutex> lock(nodes_mtx_);
+    if (std::find(waitables_.begin(), waitables_.end(), entity) == waitables_.end()) {
+      waitables_.push_back(std::move(entity));
+    }
+    reconcile_locked();
+  }
+  wake_guard_.trigger();
+}
+
+void Executor::remove_waitable(const std::shared_ptr<EntityBase>& entity) {
+  std::lock_guard<std::mutex> lock(nodes_mtx_);
+  waitables_.erase(std::remove(waitables_.begin(), waitables_.end(), entity),
+                   waitables_.end());
+  reconcile_locked();
+  wake_guard_.trigger();
+}
+
 void Executor::reconcile_locked() {
   // Desired attachment set keyed by condition handle (unique per entity).
   std::map<dds_entity_t, Attached> desired;
@@ -65,6 +84,9 @@ void Executor::reconcile_locked() {
       desired[entity->condition()] = Attached{entity->condition(), node, entity};
     }
     node_epochs_[node.get()] = node->entity_epoch();
+  }
+  for (const auto& entity : waitables_) {
+    desired[entity->condition()] = Attached{entity->condition(), nullptr, entity};
   }
 
   // Detach conditions that dropped out of the desired set.
